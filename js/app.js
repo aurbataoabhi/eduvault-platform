@@ -54,14 +54,20 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.removeItem('eduvault_session');
         }
     }
+
+    if (typeof BackendSync !== 'undefined' && BackendSync.init) {
+        BackendSync.init();
+    }
 });
 
 // ========== PRELOADER ==========
 function initPreloader() {
     setTimeout(() => {
         const preloader = document.getElementById('preloader');
-        preloader.classList.add('hidden');
-    }, 1800);
+        if (preloader) {
+            preloader.classList.add('hidden');
+        }
+    }, 800);
 }
 
 // ========== NAVBAR ==========
@@ -2139,17 +2145,13 @@ function testIntegration(type) {
     closeIntegrationModal();
 }
 
-    // Initialize backend sync if server is running
-    BackendSync.init();
-});
-
 // ===================================================================
 // BACKEND SYNC, WEBSOCKET INTEGRATION & OUTAGE SIMULATION
 // ===================================================================
 
 const BackendSync = {
-    apiUrl: window.location.origin.includes('8000') ? window.location.origin : 'http://127.0.0.1:8000',
-    wsUrl: window.location.origin.includes('8000') ? `ws://${window.location.host}` : 'ws://127.0.0.1:8000',
+    apiUrl: window.location.origin,
+    wsUrl: (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host,
     isBackendConnected: false,
     socket: null,
 

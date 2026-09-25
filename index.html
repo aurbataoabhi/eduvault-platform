@@ -24,6 +24,13 @@
             <p class="preloader-text">Initializing secure environment...</p>
         </div>
     </div>
+    <script>
+        // Bulletproof preloader dismissal safeguard
+        setTimeout(function() {
+            var p = document.getElementById('preloader');
+            if (p) p.classList.add('hidden');
+        }, 1200);
+    </script>
 
     <!-- ========== NAVBAR ========== -->
     <nav id="navbar" class="navbar">
