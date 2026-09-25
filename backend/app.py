@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 
-from database import init_db, get_db
+from database import init_db, get_db, get_active_db_type
 from models import (
     ChatMessageCreate, 
     InstructionCreate, 
@@ -115,13 +115,12 @@ def health_check():
         "status": "online",
         "service": "EduVault Platform Backend",
         "timestamp": datetime.now().isoformat(),
-        "database": "SQLite (eduvault.db)",
+        "database": get_active_db_type(),
         "features": [
-            "Session Continuity",
-            "Chat Archive",
-            "Instructions Timeline",
-            "AI Catch-Up",
-            "WebSockets",
+            "Real WebRTC Multi-Peer Mesh",
+            "Hardware Camera & Mic Integration",
+            "Cloud PostgreSQL Persistence",
+            "Screen Sharing & Live Whiteboard",
             "DRM Content Vault",
             "Live Leaderboard",
             "AI Doubt Solver"

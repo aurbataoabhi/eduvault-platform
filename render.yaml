@@ -21,6 +21,8 @@ services:
         value: 10000
       - key: SECRET_KEY
         generateValue: true
+      - key: DATABASE_URL
+        value: postgresql://eduvault_8337_user:Jj1axGm16N4veGElP4kOmrVuWgQbMElW@dpg-darc6uhsrm7s73e0djfg-a/eduvault_8337
       - key: GEMINI_API_KEY
         sync: false
       - key: OPENAI_API_KEY
