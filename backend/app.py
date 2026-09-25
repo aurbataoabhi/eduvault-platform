@@ -664,6 +664,119 @@ async def session_websocket(websocket: WebSocket, session_id: str, user_id: str 
         manager.disconnect(websocket)
 
 # =====================================================================
+# REAL WEBRTC MULTI-PARTY VIDEO & AUDIO SIGNALING HUB
+# =====================================================================
+class WebRTCRoomManager:
+    def __init__(self):
+        # room_id -> { client_id: {"ws": WebSocket, "role": str, "name": str} }
+        self.rooms: Dict[str, Dict[str, Any]] = {}
+
+    async def join(self, room_id: str, client_id: str, ws: WebSocket, role: str, name: str):
+        await ws.accept()
+        if room_id not in self.rooms:
+            self.rooms[room_id] = {}
+
+        # Collect existing peers in the room to send to newcomer
+        existing_peers = [
+            {"client_id": cid, "role": info["role"], "name": info["name"]}
+            for cid, info in self.rooms[room_id].items()
+        ]
+
+        # Send welcome payload with current active peers
+        await ws.send_json({
+            "type": "room_state",
+            "room_id": room_id,
+            "your_id": client_id,
+            "role": role,
+            "peers": existing_peers
+        })
+
+        # Save to room registry
+        self.rooms[room_id][client_id] = {"ws": ws, "role": role, "name": name}
+
+        # Announce new participant to all other peers in the room
+        for cid, info in list(self.rooms[room_id].items()):
+            if cid != client_id:
+                try:
+                    await info["ws"].send_json({
+                        "type": "peer_joined",
+                        "client_id": client_id,
+                        "role": role,
+                        "name": name
+                    })
+                except Exception:
+                    pass
+
+    async def leave(self, room_id: str, client_id: str):
+        if room_id in self.rooms and client_id in self.rooms[room_id]:
+            del self.rooms[room_id][client_id]
+            # Notify remaining peers
+            for cid, info in list(self.rooms[room_id].items()):
+                try:
+                    await info["ws"].send_json({
+                        "type": "peer_left",
+                        "client_id": client_id
+                    })
+                except Exception:
+                    pass
+            if not self.rooms[room_id]:
+                del self.rooms[room_id]
+
+    async def send_to_peer(self, room_id: str, target_id: str, message: dict):
+        if room_id in self.rooms and target_id in self.rooms[room_id]:
+            try:
+                await self.rooms[room_id][target_id]["ws"].send_json(message)
+            except Exception:
+                pass
+
+    async def broadcast(self, room_id: str, message: dict, exclude_id: Optional[str] = None):
+        if room_id in self.rooms:
+            for cid, info in list(self.rooms[room_id].items()):
+                if cid != exclude_id:
+                    try:
+                        await info["ws"].send_json(message)
+                    except Exception:
+                        pass
+
+webrtc_manager = WebRTCRoomManager()
+
+@app.websocket("/ws/webrtc/{room_id}/{client_id}")
+async def webrtc_signaling_endpoint(
+    websocket: WebSocket, 
+    room_id: str, 
+    client_id: str, 
+    role: str = Query("student"), 
+    name: str = Query("Participant")
+):
+    await webrtc_manager.join(room_id, client_id, websocket, role, name)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            try:
+                msg = json.loads(data)
+                msg_type = msg.get("type")
+                target = msg.get("target")
+
+                if msg_type in ("offer", "answer", "candidate"):
+                    # Direct peer-to-peer signaling message
+                    if target:
+                        msg["sender"] = client_id
+                        await webrtc_manager.send_to_peer(room_id, target, msg)
+                elif msg_type in ("chat", "whiteboard", "whiteboard_clear", "hand_raise", "quiz_action", "media_status"):
+                    # Real-time room broadcast (chat, drawings, reactions)
+                    msg["sender"] = client_id
+                    msg["sender_name"] = name
+                    msg["sender_role"] = role
+                    await webrtc_manager.broadcast(room_id, msg, exclude_id=client_id)
+            except json.JSONDecodeError:
+                pass
+    except WebSocketDisconnect:
+        await webrtc_manager.leave(room_id, client_id)
+    except Exception:
+        await webrtc_manager.leave(room_id, client_id)
+
+
+# =====================================================================
 # SERVE FRONTEND STATIC FILES
 # =====================================================================
 FRONTEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))

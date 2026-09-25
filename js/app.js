@@ -115,7 +115,7 @@ function navigateTo(page) {
     // Update navbar based on page
     updateNavForPage(page);
     
-    // Start timers if needed
+    // Start timers & live classroom engine if needed
     if (page === 'live-class') {
         startClassTimer();
         // Show appropriate controls
@@ -126,6 +126,10 @@ function navigateTo(page) {
             document.getElementById('live-controls')?.classList.remove('hidden');
             document.getElementById('student-controls')?.classList.add('hidden');
         }
+        startLiveClassroomWebRTC();
+    } else {
+        // If leaving live classroom, stop hardware media streams safely
+        cleanupLiveClassroomWebRTC();
     }
     
     if (page === 'test-taking') {
@@ -272,12 +276,7 @@ function fillDemoCredentials(role) {
     const passField = document.getElementById('login-password');
     const keyField = document.getElementById('login-key');
     
-    if (role === 'owner') {
-        if (emailField) emailField.value = 'owner@eduvault.io';
-        if (passField) passField.value = 'password123';
-        if (keyField) keyField.value = '';
-        showToast('Filled credentials for Platform Owner (Founder)', 'info');
-    } else if (role === 'teacher') {
+    if (role === 'teacher') {
         if (emailField) emailField.value = 'teacher@eduvault.io';
         if (passField) passField.value = 'password123';
         if (keyField) keyField.value = '';
@@ -629,92 +628,345 @@ function startClassTimer() {
 const WebRTCState = {
     localStream: null,
     screenStream: null,
-    isRealCameraActive: false,
-    isScreenSharing: false,
+    signalingSocket: null,
+    peerConnections: {},
+    roomId: 'eduvault-live-101',
+    myId: 'peer_' + Math.random().toString(36).substring(2, 9),
+    role: 'teacher',
+    isStarted: false,
     audioContext: null,
     analyser: null,
-    micAnimFrame: null
+    micAnimFrame: null,
+    isScreenSharing: false
 };
 
-async function toggleWebRTCRealSource() {
-    const videoEl = document.getElementById('real-live-video');
-    const placeholderEl = document.getElementById('video-placeholder');
-    const btn = document.getElementById('webrtc-source-btn');
-    const label = document.getElementById('webrtc-source-text');
+const RTC_CONFIG = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' }
+    ]
+};
 
-    if (!WebRTCState.isRealCameraActive) {
-        try {
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                showToast('WebRTC getUserMedia not supported in this browser.', 'error');
-                return;
-            }
-            showToast('Requesting webcam & microphone access...', 'info');
+// ===================================================================
+// ENTERPRISE REAL-TIME WEBRTC VIDEO, AUDIO & MULTI-PEER ENGINE
+// ===================================================================
+
+async function startLiveClassroomWebRTC() {
+    WebRTCState.role = AppState.userRole || 'teacher';
+    const isTeacher = WebRTCState.role === 'teacher';
+    const videoEl = document.getElementById('real-live-video');
+    const pipContainer = document.getElementById('self-video-pip');
+    const pipVideo = document.getElementById('self-live-video');
+    const placeholder = document.getElementById('video-placeholder');
+    const pill = document.getElementById('webrtc-status-pill');
+
+    if (pill) {
+        pill.className = 'webrtc-status-pill connecting';
+        pill.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Initializing WebRTC...';
+    }
+
+    try {
+        // Request Real Hardware Camera & Microphone
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            showToast('Requesting camera & microphone access...', 'info');
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-                audio: true
+                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
             });
-
             WebRTCState.localStream = stream;
-            WebRTCState.isRealCameraActive = true;
-
-            if (videoEl) {
-                videoEl.srcObject = stream;
-                videoEl.classList.remove('hidden');
-                videoEl.play().catch(e => console.warn('Video play warning:', e));
-            }
-            if (placeholderEl) {
-                placeholderEl.classList.add('hidden');
-            }
-            if (btn) {
-                btn.classList.add('active');
-            }
-            if (label) {
-                label.textContent = 'Switch to Simulated Class';
-            }
-
-            startMicAudioVisualizer(stream);
-
             AppState.camOn = true;
             AppState.micOn = true;
+
+            if (isTeacher) {
+                // Teacher's view: main stage is real local camera (muted locally to prevent audio feedback loop)
+                if (videoEl) {
+                    videoEl.srcObject = stream;
+                    videoEl.muted = true;
+                    videoEl.classList.remove('hidden');
+                    videoEl.play().catch(e => console.warn(e));
+                }
+                if (pipContainer) pipContainer.classList.add('hidden');
+            } else {
+                // Student's view: self picture-in-picture
+                if (pipVideo) {
+                    pipVideo.srcObject = stream;
+                    pipVideo.muted = true;
+                    pipVideo.play().catch(e => console.warn(e));
+                }
+                if (pipContainer) pipContainer.classList.remove('hidden');
+            }
+
+            if (placeholder) placeholder.classList.add('hidden');
+            startMicAudioVisualizer(stream);
             updateCamMicButtons(true, true);
-            showToast('🟢 Real WebRTC Camera & Mic live (720p HD)!', 'success');
-        } catch (err) {
-            console.warn('Real webcam/mic not accessible:', err);
-            showToast(`Webcam notice: ${err.message || 'Permission denied'}. Falling back to simulated stream.`, 'warning');
         }
-    } else {
-        stopWebRTCRealSource();
-        showToast('Switched back to high-fidelity simulated stream.', 'info');
+    } catch (mediaErr) {
+        console.warn('Hardware media error:', mediaErr);
+        showToast(`Hardware notice: ${mediaErr.name === 'NotAllowedError' ? 'Camera/Mic permission denied in browser' : mediaErr.message}. Connecting in audio/signaling mode.`, 'warning');
+    }
+
+    // Connect Real-Time WebRTC Mesh Signaling WebSocket
+    connectWebRTCSignaling();
+}
+
+function connectWebRTCSignaling() {
+    if (WebRTCState.signalingSocket) {
+        try { WebRTCState.signalingSocket.close(); } catch(e){}
+    }
+
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    const name = encodeURIComponent(AppState.userName || (WebRTCState.role === 'teacher' ? 'Prof. Sharma' : 'Student'));
+    const url = `${proto}//${host}/ws/webrtc/${WebRTCState.roomId}/${WebRTCState.myId}?role=${WebRTCState.role}&name=${name}`;
+
+    try {
+        const ws = new WebSocket(url);
+        WebRTCState.signalingSocket = ws;
+
+        ws.onopen = () => {
+            const pill = document.getElementById('webrtc-status-pill');
+            if (pill) {
+                pill.className = 'webrtc-status-pill connected';
+                pill.innerHTML = '<i class="fas fa-signal"></i> WebRTC P2P Live';
+            }
+            showToast(`🟢 Connected to Live WebRTC Classroom (${WebRTCState.role.toUpperCase()})`, 'success');
+        };
+
+        ws.onmessage = async (event) => {
+            try {
+                const msg = JSON.parse(event.data);
+                await handleWebRTCSignalMessage(msg);
+            } catch(e) {
+                console.error('Signal parse error:', e);
+            }
+        };
+
+        ws.onerror = (e) => {
+            console.warn('WebRTC signaling error:', e);
+        };
+
+        ws.onclose = () => {
+            const pill = document.getElementById('webrtc-status-pill');
+            if (pill) {
+                pill.className = 'webrtc-status-pill connecting';
+                pill.innerHTML = '<i class="fas fa-circle-notch"></i> Standalone Hub';
+            }
+        };
+    } catch(e) {
+        console.warn('Could not connect signaling socket:', e);
     }
 }
 
-function stopWebRTCRealSource() {
-    const videoEl = document.getElementById('real-live-video');
-    const placeholderEl = document.getElementById('video-placeholder');
-    const btn = document.getElementById('webrtc-source-btn');
-    const label = document.getElementById('webrtc-source-text');
+async function handleWebRTCSignalMessage(msg) {
+    const isTeacher = WebRTCState.role === 'teacher';
 
+    if (msg.type === 'room_state') {
+        const peerCount = (msg.peers ? msg.peers.length : 0) + 1;
+        const countEl = document.getElementById('participant-count');
+        if (countEl) countEl.textContent = peerCount;
+
+        // If I am a student and the teacher is already present in room, initiate offer to teacher
+        if (!isTeacher && msg.peers) {
+            for (const peer of msg.peers) {
+                if (peer.role === 'teacher') {
+                    initiatePeerConnection(peer.client_id, peer.name, true);
+                }
+            }
+        }
+    } else if (msg.type === 'peer_joined') {
+        showToast(`👤 ${msg.name} (${msg.role}) joined the live class!`, 'info');
+        
+        // If I am the teacher and a student joins, teacher initiates WebRTC stream to student
+        if (isTeacher) {
+            initiatePeerConnection(msg.client_id, msg.name, true);
+        }
+    } else if (msg.type === 'peer_left') {
+        showToast(`👋 Participant ${msg.client_id} disconnected`, 'info');
+        removePeer(msg.client_id);
+    } else if (msg.type === 'offer') {
+        // Received offer from peer: create answer
+        const pc = getOrCreatePeerConnection(msg.sender, msg.sender_name || 'Participant');
+        await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        sendSignal({
+            type: 'answer',
+            target: msg.sender,
+            sdp: answer
+        });
+    } else if (msg.type === 'answer') {
+        const pc = WebRTCState.peerConnections[msg.sender];
+        if (pc) {
+            await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+        }
+    } else if (msg.type === 'candidate') {
+        const pc = WebRTCState.peerConnections[msg.sender];
+        if (pc && msg.candidate) {
+            try {
+                await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+            } catch(e) {
+                console.warn('Error adding ICE candidate:', e);
+            }
+        }
+    } else if (msg.type === 'chat') {
+        addChatMessage(msg.sender_name, msg.text, false);
+    } else if (msg.type === 'hand_raise') {
+        showToast(`✋ ${msg.sender_name} raised hand!`, 'warning');
+        addChatMessage(null, `✋ ${msg.sender_name} raised hand`, true);
+    } else if (msg.type === 'whiteboard') {
+        drawRemoteWhiteboardStroke(msg.data);
+    } else if (msg.type === 'whiteboard_clear') {
+        clearWhiteboardCanvasLocally();
+    }
+}
+
+function sendSignal(payload) {
+    if (WebRTCState.signalingSocket && WebRTCState.signalingSocket.readyState === WebSocket.OPEN) {
+        WebRTCState.signalingSocket.send(JSON.stringify(payload));
+    }
+}
+
+function getOrCreatePeerConnection(targetId, targetName) {
+    if (WebRTCState.peerConnections[targetId]) {
+        return WebRTCState.peerConnections[targetId];
+    }
+
+    const pc = new RTCPeerConnection(RTC_CONFIG);
+    WebRTCState.peerConnections[targetId] = pc;
+
+    // Attach local tracks so peer can hear and see us
+    if (WebRTCState.localStream) {
+        WebRTCState.localStream.getTracks().forEach(track => {
+            pc.addTrack(track, WebRTCState.localStream);
+        });
+    }
+
+    // ICE Candidate generation
+    pc.onicecandidate = (event) => {
+        if (event.candidate) {
+            sendSignal({
+                type: 'candidate',
+                target: targetId,
+                candidate: event.candidate
+            });
+        }
+    };
+
+    // Remote Track received!
+    pc.ontrack = (event) => {
+        console.log(`🎥 Received remote WebRTC track (${event.track.kind}) from ${targetName}`);
+        const remoteStream = event.streams[0];
+        const isTeacher = WebRTCState.role === 'teacher';
+
+        if (!isTeacher) {
+            // Student received Teacher's stream -> put on main stage!
+            const mainVideo = document.getElementById('real-live-video');
+            if (mainVideo) {
+                mainVideo.srcObject = remoteStream;
+                mainVideo.muted = false; // Enable audio so student hears teacher!
+                mainVideo.classList.remove('hidden');
+                mainVideo.play().catch(e => console.warn(e));
+            }
+            document.getElementById('video-placeholder')?.classList.add('hidden');
+        } else {
+            // Teacher received Student's stream -> add to dynamic student gallery bar
+            addRemotePeerTile(targetId, targetName, remoteStream);
+        }
+    };
+
+    pc.onconnectionstatechange = () => {
+        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+            removePeer(targetId);
+        }
+    };
+
+    return pc;
+}
+
+async function initiatePeerConnection(targetId, targetName, isInitiator) {
+    const pc = getOrCreatePeerConnection(targetId, targetName);
+    if (isInitiator) {
+        try {
+            const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+            await pc.setLocalDescription(offer);
+            sendSignal({
+                type: 'offer',
+                target: targetId,
+                sdp: offer
+            });
+        } catch(e) {
+            console.error('Error creating offer:', e);
+        }
+    }
+}
+
+function addRemotePeerTile(peerId, peerName, stream) {
+    const bar = document.getElementById('remote-peers-bar');
+    if (!bar) return;
+    bar.classList.remove('hidden');
+
+    let tile = document.getElementById(`peer-tile-${peerId}`);
+    if (!tile) {
+        tile = document.createElement('div');
+        tile.className = 'remote-peer-tile';
+        tile.id = `peer-tile-${peerId}`;
+
+        const video = document.createElement('video');
+        video.autoplay = true;
+        video.playsInline = true;
+        video.srcObject = stream;
+        video.play().catch(e => console.warn(e));
+
+        const badge = document.createElement('span');
+        badge.className = 'peer-name-badge';
+        badge.textContent = peerName;
+
+        tile.appendChild(video);
+        tile.appendChild(badge);
+        bar.appendChild(tile);
+    }
+}
+
+function removePeer(peerId) {
+    if (WebRTCState.peerConnections[peerId]) {
+        try { WebRTCState.peerConnections[peerId].close(); } catch(e){}
+        delete WebRTCState.peerConnections[peerId];
+    }
+    document.getElementById(`peer-tile-${peerId}`)?.remove();
+}
+
+function cleanupLiveClassroomWebRTC() {
     if (WebRTCState.localStream) {
         WebRTCState.localStream.getTracks().forEach(track => track.stop());
         WebRTCState.localStream = null;
     }
-    WebRTCState.isRealCameraActive = false;
-
+    if (WebRTCState.screenStream) {
+        WebRTCState.screenStream.getTracks().forEach(track => track.stop());
+        WebRTCState.screenStream = null;
+    }
     stopMicAudioVisualizer();
 
+    for (const peerId in WebRTCState.peerConnections) {
+        try { WebRTCState.peerConnections[peerId].close(); } catch(e){}
+    }
+    WebRTCState.peerConnections = {};
+
+    if (WebRTCState.signalingSocket) {
+        try { WebRTCState.signalingSocket.close(); } catch(e){}
+        WebRTCState.signalingSocket = null;
+    }
+
+    const videoEl = document.getElementById('real-live-video');
     if (videoEl) {
         videoEl.srcObject = null;
-        videoEl.classList.add('hidden');
     }
-    if (placeholderEl) {
-        placeholderEl.classList.remove('hidden');
+    const pipVideo = document.getElementById('self-live-video');
+    if (pipVideo) {
+        pipVideo.srcObject = null;
     }
-    if (btn) {
-        btn.classList.remove('active');
-    }
-    if (label) {
-        label.textContent = 'Switch to Real Webcam';
-    }
+    document.getElementById('self-video-pip')?.classList.add('hidden');
+    document.getElementById('remote-peers-bar')?.classList.add('hidden');
 }
 
 function startMicAudioVisualizer(stream) {
@@ -737,7 +989,7 @@ function startMicAudioVisualizer(stream) {
 
         const buffer = new Uint8Array(WebRTCState.analyser.frequencyBinCount);
         function tick() {
-            if (!WebRTCState.isRealCameraActive || !AppState.micOn) {
+            if (!WebRTCState.localStream || !AppState.micOn) {
                 if (meter) meter.classList.remove('active');
                 return;
             }
@@ -785,7 +1037,20 @@ function updateCamMicButtons(camState, micState) {
     }
 }
 
-function toggleMic() {
+// Teacher & Unified Cam/Mic Toggles
+async function toggleMic() {
+    if (!WebRTCState.localStream && navigator.mediaDevices?.getUserMedia) {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            WebRTCState.localStream = stream;
+            AppState.micOn = true;
+            startMicAudioVisualizer(stream);
+        } catch(e) {
+            showToast('Microphone permission required', 'warning');
+            return;
+        }
+    }
+
     AppState.micOn = !AppState.micOn;
     if (WebRTCState.localStream) {
         WebRTCState.localStream.getAudioTracks().forEach(track => {
@@ -802,10 +1067,26 @@ function toggleMic() {
     if (meter) {
         meter.style.opacity = AppState.micOn ? '1' : '0.3';
     }
-    showToast(AppState.micOn ? 'Microphone unmuted' : 'Microphone muted', 'info');
+    showToast(AppState.micOn ? '🎙️ Microphone unmuted (live)' : '🎙️ Microphone muted', 'info');
 }
 
 async function toggleCam() {
+    if (!WebRTCState.localStream && navigator.mediaDevices?.getUserMedia) {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            WebRTCState.localStream = stream;
+            AppState.camOn = true;
+            const videoEl = document.getElementById('real-live-video');
+            if (videoEl) {
+                videoEl.srcObject = stream;
+                videoEl.play();
+            }
+        } catch(e) {
+            showToast('Camera permission required', 'warning');
+            return;
+        }
+    }
+
     AppState.camOn = !AppState.camOn;
     if (WebRTCState.localStream) {
         WebRTCState.localStream.getVideoTracks().forEach(track => {
@@ -818,22 +1099,20 @@ async function toggleCam() {
         btn.classList.toggle('active', AppState.camOn);
         if (icon) icon.className = AppState.camOn ? 'fas fa-video' : 'fas fa-video-slash';
     }
-    showToast(AppState.camOn ? 'Camera enabled' : 'Camera disabled', 'info');
+    showToast(AppState.camOn ? '📷 Camera turned ON' : '📷 Camera turned OFF', 'info');
 }
 
 async function toggleScreenShare() {
     const btn = document.getElementById('screen-btn');
     const videoEl = document.getElementById('real-live-video');
-    const placeholderEl = document.getElementById('video-placeholder');
 
     if (!WebRTCState.isScreenSharing) {
         try {
             if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-                btn.classList.toggle('active');
-                showToast(btn.classList.contains('active') ? 'Screen sharing active (Simulated)' : 'Screen sharing stopped', 'info');
+                showToast('Screen sharing is not supported in this browser.', 'warning');
                 return;
             }
-            showToast('Selecting window, screen, or browser tab to share...', 'info');
+            showToast('Select window, application, or tab to share...', 'info');
             const screenStream = await navigator.mediaDevices.getDisplayMedia({
                 video: { cursor: 'always' },
                 audio: false
@@ -842,24 +1121,30 @@ async function toggleScreenShare() {
             WebRTCState.screenStream = screenStream;
             WebRTCState.isScreenSharing = true;
 
+            const screenTrack = screenStream.getVideoTracks()[0];
+
+            // Replace video track in every connected peer
+            for (const peerId in WebRTCState.peerConnections) {
+                const pc = WebRTCState.peerConnections[peerId];
+                const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                if (sender) {
+                    sender.replaceTrack(screenTrack);
+                }
+            }
+
             if (videoEl) {
                 videoEl.srcObject = screenStream;
-                videoEl.classList.remove('hidden');
                 videoEl.play().catch(e => console.warn(e));
             }
-            if (placeholderEl) {
-                placeholderEl.classList.add('hidden');
-            }
             btn.classList.add('active');
-            showToast('🖥️ Screen sharing started live to all students!', 'success');
+            showToast('🖥️ Screen sharing live to all participants!', 'success');
 
-            screenStream.getVideoTracks()[0].onended = () => {
+            screenTrack.onended = () => {
                 stopScreenShare();
             };
         } catch (err) {
-            console.warn('Screen share canceled/failed:', err);
-            btn.classList.toggle('active');
-            showToast(btn.classList.contains('active') ? 'Screen sharing active (Simulated)' : 'Screen share canceled', 'info');
+            console.warn('Screen share canceled:', err);
+            showToast('Screen share canceled', 'info');
         }
     } else {
         stopScreenShare();
@@ -869,7 +1154,6 @@ async function toggleScreenShare() {
 function stopScreenShare() {
     const btn = document.getElementById('screen-btn');
     const videoEl = document.getElementById('real-live-video');
-    const placeholderEl = document.getElementById('video-placeholder');
 
     if (WebRTCState.screenStream) {
         WebRTCState.screenStream.getTracks().forEach(t => t.stop());
@@ -878,54 +1162,61 @@ function stopScreenShare() {
     WebRTCState.isScreenSharing = false;
     if (btn) btn.classList.remove('active');
 
-    if (WebRTCState.isRealCameraActive && WebRTCState.localStream && videoEl) {
-        videoEl.srcObject = WebRTCState.localStream;
-        videoEl.play().catch(e => console.warn(e));
-    } else {
-        if (videoEl) {
-            videoEl.srcObject = null;
-            videoEl.classList.add('hidden');
+    // Restore camera track to peers
+    if (WebRTCState.localStream) {
+        const camTrack = WebRTCState.localStream.getVideoTracks()[0];
+        if (camTrack) {
+            for (const peerId in WebRTCState.peerConnections) {
+                const pc = WebRTCState.peerConnections[peerId];
+                const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                if (sender) {
+                    sender.replaceTrack(camTrack);
+                }
+            }
         }
-        if (placeholderEl) placeholderEl.classList.remove('hidden');
+        if (videoEl) {
+            videoEl.srcObject = WebRTCState.localStream;
+            videoEl.play().catch(e => console.warn(e));
+        }
     }
-    showToast('Screen sharing stopped', 'info');
+    showToast('Screen sharing stopped — camera restored', 'info');
 }
 
 function toggleWhiteboard() {
-    showToast('Whiteboard opened', 'info');
+    const modal = document.getElementById('whiteboard-modal');
+    if (modal) {
+        modal.classList.toggle('hidden');
+        if (!modal.classList.contains('hidden')) {
+            setTimeout(initWhiteboard, 50);
+            showToast('🎨 Interactive Synchronized Whiteboard Active', 'info');
+        }
+    }
 }
 
 function toggleRecording() {
     AppState.isRecording = !AppState.isRecording;
     const btn = document.getElementById('record-btn');
-    btn.classList.toggle('recording', AppState.isRecording);
+    if (btn) btn.classList.toggle('recording', AppState.isRecording);
     showToast(AppState.isRecording ? '🔴 Recording started (1080p, 30fps)' : 'Recording saved to cloud vault', AppState.isRecording ? 'warning' : 'success');
 }
 
 function muteAllStudents() {
-    showToast('All students have been muted', 'info');
+    sendSignal({ type: 'mute_all' });
+    showToast('All students have been requested to mute', 'info');
 }
 
 function endClass() {
-    if (confirm('Are you sure you want to end this class?')) {
+    if (confirm('Are you sure you want to end this live class for everyone?')) {
         if (classTimerInterval) clearInterval(classTimerInterval);
-        stopWebRTCRealSource();
-        stopScreenShare();
-        showToast('Class ended. Recording saved automatically.', 'success');
-        if (AppState.userRole === 'owner') {
-        navigateTo('admin-dashboard');
-    } else if (AppState.userRole === 'teacher') {
-        navigateTo('teacher-dashboard');
-    } else {
-        navigateTo('student-dashboard');
-    }
+        cleanupLiveClassroomWebRTC();
+        showToast('Class ended. All media sessions safely terminated.', 'success');
+        navigateTo(AppState.userRole === 'teacher' ? 'teacher-dashboard' : 'student-dashboard');
     }
 }
 
 function leaveClass() {
-    if (confirm('Leave this class?')) {
-        stopWebRTCRealSource();
-        stopScreenShare();
+    if (confirm('Leave this live class?')) {
+        cleanupLiveClassroomWebRTC();
         navigateTo('student-dashboard');
     }
 }
@@ -933,6 +1224,7 @@ function leaveClass() {
 // Student Controls
 async function toggleStudentMic() {
     const btn = document.getElementById('student-mic');
+    if (!btn) return;
     const icon = btn.querySelector('i');
     const isMuted = icon.classList.contains('fa-microphone-slash');
 
@@ -941,13 +1233,14 @@ async function toggleStudentMic() {
             if (!WebRTCState.localStream && navigator.mediaDevices?.getUserMedia) {
                 WebRTCState.localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             }
+            if (WebRTCState.localStream) {
+                WebRTCState.localStream.getAudioTracks().forEach(t => t.enabled = true);
+            }
             icon.className = 'fas fa-microphone';
             btn.classList.add('active');
-            showToast('Student Microphone unmuted & live', 'info');
+            showToast('Microphone unmuted (live)', 'info');
         } catch (e) {
-            icon.className = 'fas fa-microphone';
-            btn.classList.add('active');
-            showToast('Microphone on (simulated)', 'info');
+            showToast('Microphone access denied', 'warning');
         }
     } else {
         if (WebRTCState.localStream) {
@@ -961,20 +1254,29 @@ async function toggleStudentMic() {
 
 async function toggleStudentCam() {
     const btn = document.getElementById('student-cam');
+    if (!btn) return;
     const icon = btn.querySelector('i');
     const isOff = icon.classList.contains('fa-video-slash');
+
     if (isOff) {
         try {
             if (!WebRTCState.localStream && navigator.mediaDevices?.getUserMedia) {
                 WebRTCState.localStream = await navigator.mediaDevices.getUserMedia({ video: true });
             }
+            if (WebRTCState.localStream) {
+                WebRTCState.localStream.getVideoTracks().forEach(t => t.enabled = true);
+                const pipVideo = document.getElementById('self-live-video');
+                if (pipVideo) {
+                    pipVideo.srcObject = WebRTCState.localStream;
+                    pipVideo.play();
+                }
+                document.getElementById('self-video-pip')?.classList.remove('hidden');
+            }
             icon.className = 'fas fa-video';
             btn.classList.add('active');
-            showToast('Student Camera live', 'info');
+            showToast('Camera live', 'info');
         } catch (e) {
-            icon.className = 'fas fa-video';
-            btn.classList.add('active');
-            showToast('Camera on (simulated)', 'info');
+            showToast('Camera access denied', 'warning');
         }
     } else {
         if (WebRTCState.localStream) {
@@ -989,11 +1291,11 @@ async function toggleStudentCam() {
 function raiseHand() {
     AppState.handRaised = !AppState.handRaised;
     const btn = document.getElementById('raise-hand-btn');
-    btn.classList.toggle('raised', AppState.handRaised);
+    if (btn) btn.classList.toggle('raised', AppState.handRaised);
     
     if (AppState.handRaised) {
-        showToast('✋ Hand raised — teacher will see your request', 'info');
-        // Add system message to chat
+        showToast('✋ Hand raised — sent to teacher', 'info');
+        sendSignal({ type: 'hand_raise' });
         addChatMessage(null, `${AppState.userName || 'You'} raised hand`, true);
     } else {
         showToast('Hand lowered', 'info');
@@ -1001,15 +1303,8 @@ function raiseHand() {
 }
 
 function alertTeacher() {
-    showToast('⚠️ Alert sent to teacher — audio/video issue reported', 'warning');
-    
-    // Show alert banner (teacher side simulation)
-    const banner = document.getElementById('teacher-alert-banner');
-    if (banner) {
-        banner.classList.remove('hidden');
-        const text = document.getElementById('alert-banner-text');
-        if (text) text.textContent = `Student reports audio/video issues. Please check your camera and microphone.`;
-    }
+    showToast('⚠️ Alert sent to teacher: audio/video issue reported', 'warning');
+    sendSignal({ type: 'chat', text: '⚠️ [SYSTEM ALERT]: Student reports audio/video stream difficulty.' });
 }
 
 function dismissAlert() {
