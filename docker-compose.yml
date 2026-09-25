@@ -1,0 +1,37 @@
+# ==============================================================================
+# EduVault Production Docker Compose Stack
+# Run with: docker-compose up -d --build
+# ==============================================================================
+version: '3.8'
+
+services:
+  # EduVault Core Web & API Application
+  eduvault:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: eduvault-app
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      - ENVIRONMENT=production
+      - PORT=8000
+      - HOST=0.0.0.0
+      - SECRET_KEY=${SECRET_KEY:-eduvault_prod_super_secure_secret_key_change_me_in_production_894729103}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - DATABASE_URL=sqlite:///backend/eduvault.db
+    volumes:
+      # Persistent storage volume for SQLite database and uploaded recordings
+      - eduvault_data:/app/backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  eduvault_data:
+    driver: local

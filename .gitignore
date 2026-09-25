@@ -1,0 +1,26 @@
+# Environment Variables & Secrets
+.env
+*.env
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Virtual Environments
+venv/
+env/
+ENV/
+
+# Database temporary WAL and journal files (keep eduvault.db seed or exclude as needed)
+*.db-journal
+*.db-wal
+*.db-shm
+
+# OS & Editor generated files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
