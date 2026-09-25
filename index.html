@@ -583,39 +583,39 @@
                     </div>
                 </div>
 
-                <!-- Stats Cards -->
+                <!-- Stats Cards (Real-time Telemetry from Cloud PostgreSQL) -->
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-card-icon blue"><i class="fas fa-users"></i></div>
                         <div class="stat-card-info">
-                            <span class="stat-card-value">1,247</span>
-                            <span class="stat-card-label">Total Students</span>
+                            <span class="stat-card-value" id="stat-teacher-students">--</span>
+                            <span class="stat-card-label">Active Students</span>
                         </div>
-                        <span class="stat-card-trend positive"><i class="fas fa-arrow-up"></i> 12%</span>
+                        <span class="stat-card-trend positive"><i class="fas fa-database"></i> Live</span>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-card-icon purple"><i class="fas fa-play-circle"></i></div>
+                        <div class="stat-card-icon purple"><i class="fas fa-book-open"></i></div>
                         <div class="stat-card-info">
-                            <span class="stat-card-value">84</span>
-                            <span class="stat-card-label">Lectures Uploaded</span>
+                            <span class="stat-card-value" id="stat-teacher-courses">--</span>
+                            <span class="stat-card-label">Curriculum Courses</span>
                         </div>
-                        <span class="stat-card-trend positive"><i class="fas fa-arrow-up"></i> 8%</span>
+                        <span class="stat-card-trend positive"><i class="fas fa-shield-alt"></i> DRM</span>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-card-icon green"><i class="fas fa-chart-line"></i></div>
+                        <div class="stat-card-icon green"><i class="fas fa-clipboard-check"></i></div>
                         <div class="stat-card-info">
-                            <span class="stat-card-value">94.2%</span>
-                            <span class="stat-card-label">Avg. Attendance</span>
+                            <span class="stat-card-value" id="stat-teacher-assessments">--</span>
+                            <span class="stat-card-label">Active Assessments</span>
                         </div>
-                        <span class="stat-card-trend positive"><i class="fas fa-arrow-up"></i> 3%</span>
+                        <span class="stat-card-trend positive"><i class="fas fa-check-circle"></i> Proctor</span>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-card-icon orange"><i class="fas fa-dollar-sign"></i></div>
+                        <div class="stat-card-icon orange"><i class="fas fa-server"></i></div>
                         <div class="stat-card-info">
-                            <span class="stat-card-value">$12,450</span>
-                            <span class="stat-card-label">Revenue This Month</span>
+                            <span class="stat-card-value" id="stat-teacher-db" style="font-size: 1.1rem; line-height: 1.4;">Connecting...</span>
+                            <span class="stat-card-label">Cloud Database</span>
                         </div>
-                        <span class="stat-card-trend positive"><i class="fas fa-arrow-up"></i> 18%</span>
+                        <span class="stat-card-trend positive"><i class="fas fa-bolt"></i> Real</span>
                     </div>
                 </div>
 
@@ -623,42 +623,12 @@
                     <!-- Upcoming Classes -->
                     <div class="dash-card">
                         <div class="dash-card-header">
-                            <h3><i class="fas fa-calendar-day"></i> Today's Schedule</h3>
-                            <a href="#" onclick="navigateTo('schedule-manager')">View All</a>
+                            <h3><i class="fas fa-calendar-day"></i> Scheduled Live Classes</h3>
+                            <a href="#" onclick="navigateTo('schedule-manager')">Manage Schedule</a>
                         </div>
-                        <div class="schedule-list">
-                            <div class="schedule-item live">
-                                <div class="schedule-time">
-                                    <span class="time">10:00 AM</span>
-                                    <span class="duration">1.5 hrs</span>
-                                </div>
-                                <div class="schedule-info">
-                                    <h4>Data Structures — Binary Trees</h4>
-                                    <span class="schedule-meta"><i class="fas fa-users"></i> 45 students &bull; <i class="fas fa-signal"></i> Live Now</span>
-                                </div>
-                                <button class="btn btn-sm btn-primary" onclick="navigateTo('live-class')">Join</button>
-                            </div>
-                            <div class="schedule-item upcoming">
-                                <div class="schedule-time">
-                                    <span class="time">2:00 PM</span>
-                                    <span class="duration">1 hr</span>
-                                </div>
-                                <div class="schedule-info">
-                                    <h4>Machine Learning — Neural Networks</h4>
-                                    <span class="schedule-meta"><i class="fas fa-users"></i> 62 students &bull; <i class="fas fa-clock"></i> In 3 hours</span>
-                                </div>
-                                <button class="btn btn-sm btn-outline">Prepare</button>
-                            </div>
-                            <div class="schedule-item upcoming">
-                                <div class="schedule-time">
-                                    <span class="time">5:30 PM</span>
-                                    <span class="duration">2 hrs</span>
-                                </div>
-                                <div class="schedule-info">
-                                    <h4>Web Development — React Advanced</h4>
-                                    <span class="schedule-meta"><i class="fas fa-users"></i> 38 students &bull; <i class="fas fa-clock"></i> In 6.5 hours</span>
-                                </div>
-                                <button class="btn btn-sm btn-outline">Prepare</button>
+                        <div class="schedule-list" id="teacher-schedule-list">
+                            <div class="empty-state-card" style="padding: 1.5rem; text-align: center; color: var(--text-muted);">
+                                <i class="fas fa-spinner fa-spin"></i> Loading schedule from cloud...
                             </div>
                         </div>
                     </div>
@@ -784,29 +754,29 @@
                     <div class="stat-card">
                         <div class="stat-card-icon blue"><i class="fas fa-book-open"></i></div>
                         <div class="stat-card-info">
-                            <span class="stat-card-value">6</span>
+                            <span class="stat-card-value" id="stat-student-courses">--</span>
                             <span class="stat-card-label">Enrolled Courses</span>
                         </div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-card-icon purple"><i class="fas fa-tasks"></i></div>
                         <div class="stat-card-info">
-                            <span class="stat-card-value">3</span>
-                            <span class="stat-card-label">Pending Assignments</span>
+                            <span class="stat-card-value" id="stat-student-assessments">--</span>
+                            <span class="stat-card-label">Available Assessments</span>
                         </div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-card-icon green"><i class="fas fa-medal"></i></div>
                         <div class="stat-card-info">
-                            <span class="stat-card-value">#12</span>
-                            <span class="stat-card-label">Overall Rank</span>
+                            <span class="stat-card-value" id="stat-student-rank">#1</span>
+                            <span class="stat-card-label">Global Rank</span>
                         </div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-card-icon orange"><i class="fas fa-fire"></i></div>
                         <div class="stat-card-info">
-                            <span class="stat-card-value">14</span>
-                            <span class="stat-card-label">Day Streak</span>
+                            <span class="stat-card-value" id="stat-student-points">-- pts</span>
+                            <span class="stat-card-label">Academic Points</span>
                         </div>
                     </div>
                 </div>
@@ -816,28 +786,11 @@
                     <div class="dash-card">
                         <div class="dash-card-header">
                             <h3><i class="fas fa-broadcast-tower"></i> Live & Upcoming Classes</h3>
+                            <a href="#" onclick="navigateTo('live-class')">Join Classroom</a>
                         </div>
-                        <div class="schedule-list">
-                            <div class="schedule-item live">
-                                <div class="schedule-time">
-                                    <span class="time">NOW</span>
-                                    <div class="live-pulse"></div>
-                                </div>
-                                <div class="schedule-info">
-                                    <h4>Data Structures — Binary Trees</h4>
-                                    <span class="schedule-meta"><i class="fas fa-chalkboard-teacher"></i> Prof. Sharma &bull; <i class="fas fa-users"></i> 45 attending</span>
-                                </div>
-                                <button class="btn btn-sm btn-primary" onclick="navigateTo('live-class')"><i class="fas fa-play"></i> Join</button>
-                            </div>
-                            <div class="schedule-item upcoming">
-                                <div class="schedule-time">
-                                    <span class="time">2:00 PM</span>
-                                </div>
-                                <div class="schedule-info">
-                                    <h4>Machine Learning — Neural Networks</h4>
-                                    <span class="schedule-meta"><i class="fas fa-chalkboard-teacher"></i> Dr. Patel &bull; <i class="fas fa-clock"></i> In 3 hours</span>
-                                </div>
-                                <button class="btn btn-sm btn-outline"><i class="fas fa-bell"></i> Remind</button>
+                        <div class="schedule-list" id="student-schedule-list">
+                            <div class="empty-state-card" style="padding: 1.5rem; text-align: center; color: var(--text-muted);">
+                                <i class="fas fa-spinner fa-spin"></i> Syncing live classes...
                             </div>
                         </div>
                     </div>
@@ -845,45 +798,12 @@
                     <!-- My Courses -->
                     <div class="dash-card">
                         <div class="dash-card-header">
-                            <h3><i class="fas fa-book"></i> My Courses</h3>
-                            <a href="#" onclick="navigateTo('course-view')">View All</a>
+                            <h3><i class="fas fa-book"></i> Active Courses</h3>
+                            <a href="#" onclick="navigateTo('course-view')">View All Courses</a>
                         </div>
-                        <div class="courses-mini-grid">
-                            <div class="course-mini-card" onclick="navigateTo('course-view')">
-                                <div class="course-mini-img" style="background: linear-gradient(135deg, #6C5CE7, #a29bfe);">
-                                    <i class="fas fa-project-diagram"></i>
-                                </div>
-                                <div class="course-mini-info">
-                                    <h4>Data Structures & Algorithms</h4>
-                                    <div class="progress-bar-mini">
-                                        <div class="progress-fill" style="width: 68%;"></div>
-                                    </div>
-                                    <span>68% complete</span>
-                                </div>
-                            </div>
-                            <div class="course-mini-card" onclick="navigateTo('course-view')">
-                                <div class="course-mini-img" style="background: linear-gradient(135deg, #00D2FF, #3a7bd5);">
-                                    <i class="fas fa-brain"></i>
-                                </div>
-                                <div class="course-mini-info">
-                                    <h4>Machine Learning Fundamentals</h4>
-                                    <div class="progress-bar-mini">
-                                        <div class="progress-fill" style="width: 42%;"></div>
-                                    </div>
-                                    <span>42% complete</span>
-                                </div>
-                            </div>
-                            <div class="course-mini-card" onclick="navigateTo('course-view')">
-                                <div class="course-mini-img" style="background: linear-gradient(135deg, #FF6B6B, #ee5a24);">
-                                    <i class="fas fa-globe"></i>
-                                </div>
-                                <div class="course-mini-info">
-                                    <h4>Full Stack Web Development</h4>
-                                    <div class="progress-bar-mini">
-                                        <div class="progress-fill" style="width: 85%;"></div>
-                                    </div>
-                                    <span>85% complete</span>
-                                </div>
+                        <div class="courses-mini-grid" id="student-courses-grid">
+                            <div class="empty-state-card" style="padding: 1.5rem; text-align: center; color: var(--text-muted);">
+                                <i class="fas fa-spinner fa-spin"></i> Fetching enrolled curriculum...
                             </div>
                         </div>
                     </div>
@@ -1614,22 +1534,26 @@
                 <!-- Quiz Builder -->
                 <div class="assessment-builder" id="assessment-builder">
                     <div class="builder-header">
-                        <input type="text" class="builder-title-input" placeholder="Assessment Title" value="Quiz: Binary Search Trees">
+                        <input type="text" class="builder-title-input" id="assessment-title-input" placeholder="Assessment Title" value="Mastery Quiz: Binary Trees & Traversal">
                         <div class="builder-settings">
                             <div class="setting-group">
+                                <label>Subject</label>
+                                <input type="text" id="assessment-subject-input" value="Data Structures" style="width: 140px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary);">
+                            </div>
+                            <div class="setting-group">
                                 <label>Duration</label>
-                                <input type="number" value="30" min="5" max="300"> <span>minutes</span>
+                                <input type="number" id="assessment-duration-input" value="30" min="5" max="300"> <span>min</span>
                             </div>
                             <div class="setting-group">
                                 <label>Total Marks</label>
-                                <input type="number" value="100" min="1">
+                                <input type="number" id="assessment-marks-input" value="50" min="1">
                             </div>
                             <div class="setting-group">
-                                <label>Attempts Allowed</label>
-                                <select id="attempts-select">
-                                    <option value="1">1 (One-time only)</option>
-                                    <option value="unlimited">Unlimited (Retake allowed)</option>
-                                    <option value="3">Up to 3</option>
+                                <label>Difficulty</label>
+                                <select id="assessment-difficulty-select">
+                                    <option value="Beginner">Beginner</option>
+                                    <option value="Intermediate" selected>Intermediate</option>
+                                    <option value="Advanced">Advanced</option>
                                 </select>
                             </div>
                         </div>
@@ -2068,47 +1992,13 @@ If BF > 1 or BF < -1, rotation needed!</code></pre>
 
                 <!-- Upcoming Schedule List -->
                 <div class="upcoming-schedule">
-                    <h3><i class="fas fa-list-alt"></i> Upcoming Schedule</h3>
-                    <div class="schedule-timeline">
-                        <div class="timeline-item">
-                            <div class="timeline-date">
-                                <span class="day">25</span>
-                                <span class="month">SEP</span>
-                            </div>
-                            <div class="timeline-content">
-                                <div class="timeline-event live-event">
-                                    <h4><i class="fas fa-video"></i> Data Structures — Binary Trees</h4>
-                                    <p>10:00 AM – 11:30 AM • 45 students enrolled</p>
-                                </div>
-                                <div class="timeline-event">
-                                    <h4><i class="fas fa-video"></i> Machine Learning — Neural Networks</h4>
-                                    <p>2:00 PM – 3:00 PM • 62 students enrolled</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="timeline-item">
-                            <div class="timeline-date">
-                                <span class="day">28</span>
-                                <span class="month">SEP</span>
-                            </div>
-                            <div class="timeline-content">
-                                <div class="timeline-event test-event">
-                                    <h4><i class="fas fa-file-alt"></i> Midterm Exam — Data Structures</h4>
-                                    <p>9:00 AM – 11:00 AM • Proctored • 120 marks</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="timeline-item">
-                            <div class="timeline-date">
-                                <span class="day">30</span>
-                                <span class="month">SEP</span>
-                            </div>
-                            <div class="timeline-content">
-                                <div class="timeline-event hackathon-event">
-                                    <h4><i class="fas fa-code"></i> Hackathon: API Design Challenge</h4>
-                                    <p>10:00 AM – 6:00 PM • Teams of 3 • Prizes: $500</p>
-                                </div>
-                            </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3><i class="fas fa-list-alt"></i> Upcoming Class Schedule</h3>
+                        <button class="btn btn-sm btn-primary" onclick="openScheduleModal()"><i class="fas fa-plus"></i> Schedule Class</button>
+                    </div>
+                    <div class="schedule-timeline" id="schedule-timeline-container">
+                        <div class="empty-state-card" style="padding: 2rem; text-align: center; color: var(--text-muted);">
+                            <i class="fas fa-spinner fa-spin"></i> Fetching verified schedule from database...
                         </div>
                     </div>
                 </div>
@@ -2202,26 +2092,22 @@ If BF > 1 or BF < -1, rotation needed!</code></pre>
                                 <div class="form-row-2col">
                                     <div class="form-group">
                                         <label>Full Name</label>
-                                        <input type="text" value="Prof. Sharma">
+                                        <input type="text" id="settings-fullname" placeholder="Enter your full name" value="Prof. Rajesh Sharma">
                                     </div>
                                     <div class="form-group">
-                                        <label>Username</label>
-                                        <input type="text" value="prof.sharma">
+                                        <label>Organization</label>
+                                        <input type="text" id="settings-org" placeholder="University / Institute" value="Indian Institute of Technology">
                                     </div>
                                 </div>
                                 <div class="form-group">
-                                    <label>Email</label>
-                                    <input type="email" value="sharma@university.edu">
+                                    <label>Email Address</label>
+                                    <input type="email" id="settings-email" readonly value="teacher@eduvault.io" style="opacity: 0.8; cursor: not-allowed;">
                                 </div>
                                 <div class="form-group">
-                                    <label>Organization</label>
-                                    <input type="text" value="TechEd Academy">
+                                    <label>Academic Bio</label>
+                                    <textarea id="settings-bio" rows="3">Educator and researcher in Computer Science, Data Structures, and High Performance Systems.</textarea>
                                 </div>
-                                <div class="form-group">
-                                    <label>Bio</label>
-                                    <textarea rows="3">Professor of Computer Science with 15+ years of experience in teaching Data Structures, Algorithms, and Machine Learning.</textarea>
-                                </div>
-                                <button class="btn btn-primary"><i class="fas fa-save"></i> Save Changes</button>
+                                <button class="btn btn-primary" onclick="saveProfileSettings()"><i class="fas fa-save"></i> Save Changes</button>
                             </div>
                         </div>
 
@@ -2231,21 +2117,21 @@ If BF > 1 or BF < -1, rotation needed!</code></pre>
                             <div class="settings-form">
                                 <div class="form-group">
                                     <label>Current Password</label>
-                                    <input type="password" placeholder="Enter current password">
+                                    <input type="password" id="settings-current-pw" placeholder="Enter current password">
                                 </div>
                                 <div class="form-group">
                                     <label>New Password</label>
-                                    <input type="password" placeholder="Enter new password">
+                                    <input type="password" id="settings-new-pw" placeholder="Enter new password (min 6 characters)">
                                 </div>
                                 <div class="form-group">
                                     <label>Confirm New Password</label>
-                                    <input type="password" placeholder="Confirm new password">
+                                    <input type="password" id="settings-confirm-pw" placeholder="Confirm new password">
                                 </div>
                                 <div class="security-note">
-                                    <i class="fas fa-info-circle"></i>
-                                    <span>Changing your password will log you out of all sessions and require re-verification from connected students.</span>
+                                    <i class="fas fa-shield-alt"></i>
+                                    <span>Argon2 Enterprise Cryptographic Hashing protects your password on our cloud database.</span>
                                 </div>
-                                <button class="btn btn-primary"><i class="fas fa-lock"></i> Update Password</button>
+                                <button class="btn btn-primary" onclick="updateUserPassword()"><i class="fas fa-lock"></i> Update Password</button>
                                 <hr>
                                 <h4>Two-Factor Authentication</h4>
                                 <div class="toggle-setting">
@@ -2578,21 +2464,21 @@ If BF > 1 or BF < -1, rotation needed!</code></pre>
             <div class="upload-settings">
                 <div class="form-group">
                     <label>Content Title</label>
-                    <input type="text" placeholder="e.g., Introduction to Binary Trees">
+                    <input type="text" id="upload-title-input" placeholder="e.g., Introduction to Binary Trees">
                 </div>
                 <div class="form-group">
                     <label>Subject / Topic</label>
-                    <select>
-                        <option>Data Structures — Trees</option>
-                        <option>Data Structures — Arrays</option>
-                        <option>Machine Learning — Neural Networks</option>
-                        <option>Web Development — React</option>
+                    <select id="upload-category-input">
+                        <option>Computer Science</option>
+                        <option>Artificial Intelligence</option>
+                        <option>Web Systems</option>
+                        <option>Cybersecurity</option>
                     </select>
                 </div>
                 <div class="form-row-2col">
                     <div class="form-group">
                         <label>Content Type</label>
-                        <select>
+                        <select id="upload-type-input">
                             <option>Video Lecture</option>
                             <option>Study Material (PDF)</option>
                             <option>Presentation</option>
@@ -2602,7 +2488,7 @@ If BF > 1 or BF < -1, rotation needed!</code></pre>
                     </div>
                     <div class="form-group">
                         <label>Access</label>
-                        <select>
+                        <select id="upload-access-input">
                             <option>All enrolled students</option>
                             <option>Specific batch only</option>
                             <option>Premium students only</option>
@@ -2610,7 +2496,7 @@ If BF > 1 or BF < -1, rotation needed!</code></pre>
                     </div>
                 </div>
                 <h4>DRM & Protection Settings</h4>
-                <label class="checkbox-label"><input type="checkbox" checked> Enable DRM protection</label>
+                <label class="checkbox-label"><input type="checkbox" id="upload-drm-input" checked> Enable DRM protection</label>
                 <label class="checkbox-label"><input type="checkbox" checked> Add invisible watermark</label>
                 <label class="checkbox-label"><input type="checkbox"> Allow download (in-app only, not browser)</label>
                 <label class="checkbox-label"><input type="checkbox" checked> Disable screen recording detection</label>
@@ -2629,7 +2515,7 @@ If BF > 1 or BF < -1, rotation needed!</code></pre>
             <h2><i class="fas fa-calendar-plus"></i> Schedule New Event</h2>
             <div class="form-group">
                 <label>Event Type</label>
-                <select>
+                <select id="schedule-type-input">
                     <option>Live Lecture</option>
                     <option>Test / Exam</option>
                     <option>Quiz</option>
@@ -2640,52 +2526,42 @@ If BF > 1 or BF < -1, rotation needed!</code></pre>
             </div>
             <div class="form-group">
                 <label>Title</label>
-                <input type="text" placeholder="e.g., Data Structures — Lecture 12">
+                <input type="text" id="schedule-title-input" placeholder="e.g., Data Structures — Lecture 12">
             </div>
             <div class="form-row-2col">
                 <div class="form-group">
                     <label>Date</label>
-                    <input type="date" value="2026-09-26">
+                    <input type="date" id="schedule-date-input" value="2026-09-26">
                 </div>
                 <div class="form-group">
                     <label>Time</label>
-                    <input type="time" value="10:00">
+                    <input type="time" id="schedule-time-input" value="10:00">
                 </div>
             </div>
             <div class="form-group">
                 <label>Duration</label>
-                <select>
+                <select id="schedule-duration-input">
                     <option>30 minutes</option>
                     <option>1 hour</option>
                     <option selected>1.5 hours</option>
                     <option>2 hours</option>
                     <option>3 hours</option>
-                    <option>Custom</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Recurring</label>
-                <select>
-                    <option>One-time</option>
-                    <option>Daily</option>
-                    <option>Weekly</option>
-                    <option>Bi-weekly</option>
-                    <option>Monthly</option>
                 </select>
             </div>
             <div class="form-group">
                 <label>Course</label>
-                <select>
-                    <option>Data Structures & Algorithms</option>
-                    <option>Machine Learning</option>
-                    <option>Web Development</option>
+                <select id="schedule-course-select">
+                    <option value="course-dsa">Advanced Data Structures & Algorithms</option>
+                    <option value="course-ml">Deep Learning & Neural Architectures</option>
+                    <option value="course-web">Full-Stack Web Systems & High Concurrency</option>
+                    <option value="course-sec">Cybersecurity & DRM Cryptographic Vaults</option>
                 </select>
             </div>
             <label class="checkbox-label"><input type="checkbox" checked> Notify enrolled students</label>
             <label class="checkbox-label"><input type="checkbox" checked> Add to student dashboards</label>
             <div class="modal-actions">
                 <button class="btn btn-ghost" onclick="closeScheduleModal()">Cancel</button>
-                <button class="btn btn-primary" onclick="createScheduledEvent()"><i class="fas fa-calendar-check"></i> Schedule</button>
+                <button class="btn btn-primary" onclick="createScheduledEvent()"><i class="fas fa-calendar-check"></i> Schedule Event</button>
             </div>
         </div>
     </div>

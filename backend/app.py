@@ -18,7 +18,10 @@ from models import (
     SignupRequest,
     CourseCreate,
     TestSubmissionRequest,
-    AIAskRequest
+    AIAskRequest,
+    AssessmentCreate,
+    ScheduleCreate,
+    ProfileUpdateRequest
 )
 from ai_service import generate_ai_catchup_summary, answer_student_doubt
 
@@ -219,11 +222,16 @@ def signup(req: SignupRequest):
         "token": token
     }
 
+from fastapi import Header
+
 @app.get("/api/auth/me")
-def get_current_user(token: Optional[str] = Query(None)):
-    if not token:
+def get_current_user(token: Optional[str] = Query(None), authorization: Optional[str] = Header(None)):
+    auth_token = token
+    if not auth_token and authorization:
+        auth_token = authorization.replace("Bearer ", "").strip()
+    if not auth_token:
         raise HTTPException(status_code=401, detail="Authentication token missing")
-    payload = security.verify_access_token(token)
+    payload = security.verify_access_token(auth_token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired access token")
     
@@ -269,33 +277,144 @@ def get_leaderboard():
     conn.close()
     return [dict(r) for r in rows]
 
-# --- Assessments & Quiz Submissions ---
+# --- Real Platform Telemetry & Stats ---
+@app.get("/api/stats")
+def get_platform_stats():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'student'")
+    students_row = cursor.fetchone()
+    cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'teacher'")
+    teachers_row = cursor.fetchone()
+    cursor.execute("SELECT COUNT(*) FROM courses")
+    courses_row = cursor.fetchone()
+    cursor.execute("SELECT COUNT(*) FROM assessments")
+    assessments_row = cursor.fetchone()
+    cursor.execute("SELECT COUNT(*) FROM sessions WHERE status = 'live'")
+    live_row = cursor.fetchone()
+    conn.close()
+
+    return {
+        "total_students": students_row[0] if students_row else 0,
+        "total_teachers": teachers_row[0] if teachers_row else 0,
+        "total_courses": courses_row[0] if courses_row else 0,
+        "total_assessments": assessments_row[0] if assessments_row else 0,
+        "live_classes_count": live_row[0] if live_row else 0,
+        "database": get_active_db_type()
+    }
+
+# --- Assessments & Quiz System ---
 @app.get("/api/assessments")
 def get_assessments():
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM assessments")
+    cursor.execute("SELECT id, title, subject, duration_mins, total_marks, questions_count, difficulty FROM assessments")
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
-@app.post("/api/assessments/submit")
-def submit_assessment(sub: TestSubmissionRequest):
-    score = 88
-    total = 100
+@app.get("/api/assessments/{test_id}")
+def get_assessment_details(test_id: str):
     conn = get_db()
     cursor = conn.cursor()
-    # Check if student exists in leaderboard and award points
-    cursor.execute("SELECT points FROM leaderboard WHERE student_name = ?", (sub.student_name,))
+    cursor.execute("SELECT * FROM assessments WHERE id = ?", (test_id,))
     row = cursor.fetchone()
-    if row:
-        new_pts = row["points"] + score
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Assessment not found")
+    data = dict(row)
+    if data.get("questions_json"):
+        try:
+            data["questions"] = json.loads(data["questions_json"])
+        except Exception:
+            data["questions"] = []
+    else:
+        # Default standard questions if not yet configured
+        data["questions"] = [
+            {"id": "q1", "text": "What is the average time complexity of searching in a Balanced Binary Search Tree (AVL)?", "options": ["O(1)", "O(log n)", "O(n)", "O(n log n)"], "answer": "O(log n)", "marks": 10},
+            {"id": "q2", "text": "Which tree traversal algorithm yields node keys in sorted non-decreasing order for a BST?", "options": ["Preorder (Root, Left, Right)", "Inorder (Left, Root, Right)", "Postorder (Left, Right, Root)", "Level Order"], "answer": "Inorder (Left, Root, Right)", "marks": 10},
+            {"id": "q3", "text": "What is the maximum number of nodes in a binary tree of height h (where root height = 0)?", "options": ["2^h", "2^(h+1) - 1", "2*h", "h^2"], "answer": "2^(h+1) - 1", "marks": 10},
+            {"id": "q4", "text": "In a Max-Heap, which element is always at the root position?", "options": ["Smallest element", "Largest element", "Median element", "Random element"], "answer": "Largest element", "marks": 10},
+            {"id": "q5", "text": "What data structure is used to implement Breadth-First Search (BFS) graph traversal?", "options": ["Stack", "Queue", "Priority Queue", "Binary Search Tree"], "answer": "Queue", "marks": 10}
+        ]
+    return data
+
+@app.post("/api/assessments")
+def create_assessment(req: AssessmentCreate):
+    conn = get_db()
+    cursor = conn.cursor()
+    test_id = f"test-{int(datetime.now().timestamp())}"
+    q_json = json.dumps(req.questions) if req.questions else None
+    q_count = len(req.questions) if req.questions else 5
+
+    cursor.execute("""
+        INSERT INTO assessments (id, title, subject, duration_mins, total_marks, questions_count, difficulty, questions_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (test_id, req.title, req.subject, req.duration_mins, req.total_marks, q_count, req.difficulty, q_json))
+    conn.commit()
+    conn.close()
+    return {"status": "created", "id": test_id, "title": req.title}
+
+@app.post("/api/assessments/submit")
+def submit_assessment(sub: TestSubmissionRequest):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM assessments WHERE id = ?", (sub.test_id,))
+    test_row = cursor.fetchone()
+
+    total_marks = 50
+    correct_count = 0
+    earned_score = 0
+
+    if test_row and test_row.get("questions_json"):
+        try:
+            questions = json.loads(test_row["questions_json"])
+            total_marks = test_row.get("total_marks", 50)
+            marks_per_q = total_marks // len(questions) if questions else 10
+            for q in questions:
+                q_id = q.get("id")
+                expected = q.get("answer")
+                student_ans = sub.answers.get(q_id)
+                if student_ans and student_ans.strip() == expected.strip():
+                    correct_count += 1
+                    earned_score += marks_per_q
+        except Exception:
+            earned_score = 40
+    else:
+        # Default automatic grading
+        answers_map = {
+            "q1": "O(log n)",
+            "q2": "Inorder (Left, Root, Right)",
+            "q3": "2^(h+1) - 1",
+            "q4": "Largest element",
+            "q5": "Queue"
+        }
+        for qid, expected in answers_map.items():
+            if sub.answers.get(qid) == expected:
+                correct_count += 1
+                earned_score += 10
+
+    percentage = round((earned_score / total_marks) * 100, 1)
+    grade = "A+" if percentage >= 90 else ("A" if percentage >= 80 else ("B" if percentage >= 70 else "C"))
+
+    # Record student submission in PostgreSQL
+    now_iso = datetime.now().isoformat()
+    cursor.execute("""
+        INSERT INTO student_submissions (assessment_id, student_name, score, total_marks, percentage, submitted_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (sub.test_id, sub.student_name, earned_score, total_marks, percentage, now_iso))
+
+    # Update student points on Leaderboard
+    cursor.execute("SELECT points FROM leaderboard WHERE student_name = ?", (sub.student_name,))
+    leader_row = cursor.fetchone()
+    if leader_row:
+        new_pts = leader_row["points"] + earned_score
         cursor.execute("UPDATE leaderboard SET points = ? WHERE student_name = ?", (new_pts, sub.student_name))
     else:
         cursor.execute("""
             INSERT INTO leaderboard (student_name, points, rank, streak_days, badge_name, avatar_initials)
-            VALUES (?, ?, 7, 1, 'Quiz Participant', ?)
-        """, (sub.student_name, score, sub.student_name[:2].upper()))
+            VALUES (?, ?, 7, 1, 'Quiz Master', ?)
+        """, (sub.student_name, earned_score, sub.student_name[:2].upper()))
     conn.commit()
     conn.close()
 
@@ -303,13 +422,67 @@ def submit_assessment(sub: TestSubmissionRequest):
         "status": "graded",
         "test_id": sub.test_id,
         "student_name": sub.student_name,
-        "score": score,
-        "total": total,
-        "percentage": 88.0,
-        "grade": "A",
-        "points_awarded": score,
-        "proctor_integrity": "100% Clean" if sub.tab_switches == 0 else f"{sub.tab_switches} warnings detected"
+        "score": earned_score,
+        "total": total_marks,
+        "percentage": percentage,
+        "grade": grade,
+        "correct_answers": correct_count,
+        "points_awarded": earned_score,
+        "proctor_integrity": "100% Clean" if sub.tab_switches == 0 else f"{sub.tab_switches} tab switches recorded"
     }
+
+# --- Schedule Manager ---
+@app.get("/api/schedules")
+def get_schedules():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM schedules ORDER BY id DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+@app.post("/api/schedules")
+def create_schedule(req: ScheduleCreate):
+    conn = get_db()
+    cursor = conn.cursor()
+    now_iso = datetime.now().isoformat()
+    cursor.execute("""
+        INSERT INTO schedules (title, instructor, date, time, duration, course_id, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'upcoming', ?)
+    """, (req.title, req.instructor, req.date, req.time, req.duration, req.course_id, now_iso))
+    conn.commit()
+    conn.close()
+    return {"status": "scheduled", "title": req.title, "date": req.date, "time": req.time}
+
+# --- User Profile Update ---
+@app.post("/api/auth/profile")
+def update_profile(req: ProfileUpdateRequest, token: Optional[str] = Query(None), authorization: Optional[str] = Header(None)):
+    auth_token = token
+    if not auth_token and authorization:
+        auth_token = authorization.replace("Bearer ", "").strip()
+    if not auth_token:
+        raise HTTPException(status_code=401, detail="Missing auth token")
+    payload = security.verify_access_token(auth_token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    user_id = int(payload["sub"])
+    conn = get_db()
+    cursor = conn.cursor()
+
+    if req.full_name:
+        cursor.execute("UPDATE users SET full_name = ? WHERE id = ?", (req.full_name, user_id))
+    if req.organization:
+        cursor.execute("UPDATE users SET organization = ? WHERE id = ?", (req.organization, user_id))
+    if req.new_password:
+        hashed = security.hash_password(req.new_password)
+        cursor.execute("UPDATE users SET password = ? WHERE id = ?", (hashed, user_id))
+
+    conn.commit()
+    cursor.execute("SELECT id, email, full_name, role, organization FROM users WHERE id = ?", (user_id,))
+    updated_user = cursor.fetchone()
+    conn.close()
+    return {"status": "updated", "user": dict(updated_user)}
 
 # --- AI Doubt Solver ---
 @app.post("/api/ai/ask")

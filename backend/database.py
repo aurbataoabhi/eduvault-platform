@@ -456,3 +456,17 @@ def seed_additional_tables(cursor):
     INSERT INTO assessments (id, title, subject, duration_mins, total_marks, questions_count, difficulty)
     VALUES (?, ?, ?, ?, ?, ?, ?)
     """, assessments)
+
+    cursor.execute("SELECT COUNT(*) FROM schedules")
+    sched_count = cursor.fetchone()[0]
+    if sched_count == 0:
+        schedules = [
+            ("Data Structures — Binary Trees & Traversal", "Prof. Rajesh Sharma", "2026-09-26", "10:00 AM", "1.5 hrs", "course-dsa", "upcoming", now_iso),
+            ("Machine Learning — Neural Network Architectures", "Prof. Rajesh Sharma", "2026-09-27", "02:00 PM", "1 hr", "course-ml", "upcoming", now_iso),
+            ("Full-Stack Web — React High-Performance Hooks", "Prof. Rajesh Sharma", "2026-09-28", "05:30 PM", "2 hrs", "course-web", "upcoming", now_iso)
+        ]
+        cursor.executemany("""
+        INSERT INTO schedules (title, instructor, date, time, duration, course_id, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, schedules)
+

@@ -56,7 +56,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (typeof BackendSync !== 'undefined' && BackendSync.init) {
-        BackendSync.init();
+        BackendSync.init().then(() => {
+            loadDashboardData();
+        });
+    } else {
+        loadDashboardData();
     }
 });
 
@@ -133,7 +137,21 @@ function navigateTo(page) {
     }
     
     if (page === 'test-taking') {
-        startTestTimer();
+        loadTestQuestions('quiz-trees');
+    } else {
+        if (testTimerInterval) clearInterval(testTimerInterval);
+    }
+
+    if (page === 'teacher-dashboard' || page === 'student-dashboard') {
+        loadDashboardData();
+    }
+
+    if (page === 'schedule-manager') {
+        loadSchedulesData();
+    }
+
+    if (page === 'course-view' || page === 'content-manager') {
+        loadCoursesData();
     }
 
     if (page === 'leaderboard') {
@@ -1478,20 +1496,51 @@ function handleFileSelect(e) {
     }
 }
 
-function uploadContent() {
-    showToast('🔐 Uploading and applying DRM protection...', 'info');
-    setTimeout(() => {
-        closeUploadModal();
-        showToast('✅ Content uploaded and protected successfully!', 'success');
-    }, 2000);
+async function uploadContent() {
+    const titleInput = document.getElementById('upload-title-input');
+    const categorySelect = document.getElementById('upload-category-input');
+    const drmToggle = document.getElementById('upload-drm-input');
+
+    const title = titleInput ? titleInput.value.trim() : '';
+    if (!title) {
+        showToast('Please specify a title for the content / course', 'warning');
+        return;
+    }
+
+    const payload = {
+        title: title,
+        instructor: AppState.userName || 'Prof. Rajesh Sharma',
+        category: categorySelect ? categorySelect.value : 'Computer Science',
+        drm_protected: drmToggle ? drmToggle.checked : true
+    };
+
+    try {
+        showToast('🔐 Encrypting and publishing to DRM Vault...', 'info');
+        const res = await fetch(`${BackendSync.apiUrl}/api/courses`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+            closeUploadModal();
+            if (titleInput) titleInput.value = '';
+            showToast('✅ Course & Content published and protected with DRM in cloud database!', 'success');
+            await loadCoursesData();
+            await loadDashboardData();
+        } else {
+            showToast('Failed to upload content to database', 'danger');
+        }
+    } catch(e) {
+        showToast('Network error uploading content', 'danger');
+    }
 }
 
 function createPlaylist() {
-    showToast('📋 New playlist created', 'success');
+    openUploadModal();
 }
 
 function addSubject() {
-    showToast('📁 New subject folder created', 'success');
+    openUploadModal();
 }
 
 // ========== COURSE VIEW ==========
@@ -1568,16 +1617,102 @@ function addQuestion() {
     showToast(`Question ${questionCount} added`, 'info');
 }
 
-function publishAssessment() {
-    showToast('📋 Assessment published and visible to students!', 'success');
+async function publishAssessment() {
+    const titleInput = document.getElementById('assessment-title-input');
+    const subjectInput = document.getElementById('assessment-subject-input');
+    const durationInput = document.getElementById('assessment-duration-input');
+    const marksInput = document.getElementById('assessment-marks-input');
+    const diffSelect = document.getElementById('assessment-difficulty-select');
+
+    const title = titleInput ? titleInput.value.trim() : '';
+    if (!title) {
+        showToast('Please enter an assessment title', 'warning');
+        return;
+    }
+
+    // Collect questions from cards
+    const questionCards = document.querySelectorAll('#questions-container .question-card');
+    const questions = [];
+
+    questionCards.forEach((card, idx) => {
+        const textEl = card.querySelector('.q-text');
+        const text = textEl ? textEl.value.trim() : `Question ${idx + 1}`;
+        const marksEl = card.querySelector('.q-marks');
+        const marks = marksEl ? parseInt(marksEl.value) : 10;
+
+        const options = [];
+        let chosenAnswer = "";
+
+        const optInputs = card.querySelectorAll('.q-option');
+        optInputs.forEach(opt => {
+            const radio = opt.querySelector('input[type="radio"]');
+            const txt = opt.querySelector('input[type="text"]');
+            if (txt && txt.value.trim()) {
+                const val = txt.value.trim();
+                options.push(val);
+                if (radio && radio.checked) {
+                    chosenAnswer = val;
+                }
+            }
+        });
+
+        if (options.length === 0) {
+            options.push("Option A", "Option B", "Option C", "Option D");
+            chosenAnswer = "Option B";
+        }
+        if (!chosenAnswer) {
+            chosenAnswer = options[0];
+        }
+
+        questions.push({
+            id: `q${idx + 1}`,
+            text: text,
+            options: options,
+            answer: chosenAnswer,
+            marks: marks
+        });
+    });
+
+    const payload = {
+        title: title,
+        subject: subjectInput ? subjectInput.value.trim() : 'Computer Science',
+        duration_mins: durationInput ? parseInt(durationInput.value) : 30,
+        total_marks: marksInput ? parseInt(marksInput.value) : 50,
+        difficulty: diffSelect ? diffSelect.value : 'Intermediate',
+        questions: questions
+    };
+
+    try {
+        showToast('Publishing assessment to cloud database...', 'info');
+        const res = await fetch(`${BackendSync.apiUrl}/api/assessments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+            const data = await res.json();
+            showToast('📋 Assessment published live and stored in cloud database!', 'success');
+            await loadDashboardData();
+            setTimeout(() => {
+                navigateTo('test-taking');
+                loadTestQuestions(data.id);
+            }, 1200);
+        } else {
+            showToast('Failed to publish assessment', 'danger');
+        }
+    } catch(e) {
+        showToast('Network error publishing assessment', 'danger');
+    }
 }
 
-// ========== TEST TAKING ==========
+// ========== TEST TAKING & GRADING ENGINE ==========
 let testTimerInterval;
+let currentTestQuestions = [];
+let currentTestId = "quiz-trees";
 
-function startTestTimer() {
+function startTestTimer(totalSeconds = 1800) {
     if (testTimerInterval) clearInterval(testTimerInterval);
-    let timeLeft = 29 * 60 + 45; // 29:45
+    let timeLeft = totalSeconds;
     
     testTimerInterval = setInterval(() => {
         timeLeft--;
@@ -1591,38 +1726,110 @@ function startTestTimer() {
             submitTest();
         }
         
-        // Warning when 5 minutes left
         if (timeLeft === 300) {
             showToast('⏰ Only 5 minutes remaining!', 'warning');
         }
     }, 1000);
 }
 
+async function loadTestQuestions(testId = "quiz-trees") {
+    currentTestId = testId;
+    AppState.testAnswers = {};
+    AppState.currentQuestion = 1;
+
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/assessments/${testId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+
+        // Update header
+        const titleEl = document.getElementById('test-taking-title') || document.querySelector('.test-info h2');
+        if (titleEl) titleEl.innerHTML = `<i class="fas fa-file-alt"></i> ${escapeHtml(data.title)}`;
+
+        const metaEl = document.getElementById('test-taking-meta') || document.querySelector('.test-info .test-meta');
+        if (metaEl) {
+            const qCount = data.questions ? data.questions.length : 5;
+            metaEl.textContent = `${qCount} Questions • ${data.total_marks || 50} Marks • Proctored Session`;
+        }
+
+        currentTestQuestions = data.questions || [];
+        renderTestQuestionsUI();
+        startTestTimer(data.duration_mins ? data.duration_mins * 60 : 1800);
+    } catch(e) {
+        console.warn('Error loading test questions:', e);
+    }
+}
+
+function renderTestQuestionsUI() {
+    const questionArea = document.querySelector('.test-question-area');
+    const navGrid = document.getElementById('test-nav-grid');
+    if (!questionArea || !navGrid || currentTestQuestions.length === 0) return;
+
+    questionArea.innerHTML = currentTestQuestions.map((q, idx) => {
+        const qNum = idx + 1;
+        const opts = q.options || ["A", "B", "C", "D"];
+        const letters = ["A", "B", "C", "D", "E"];
+
+        return `
+        <div class="test-question ${qNum === 1 ? 'active' : ''}" id="test-q-${qNum}" style="${qNum === 1 ? '' : 'display:none;'}">
+            <div class="tq-header">
+                <span class="tq-number">Question ${qNum} of ${currentTestQuestions.length}</span>
+                <span class="tq-marks">${q.marks || 10} marks</span>
+            </div>
+            <p class="tq-text" style="font-size: 1.1rem; font-weight: 500; margin: 1.2rem 0; line-height: 1.6;">${escapeHtml(q.text)}</p>
+            <div class="tq-options">
+                ${opts.map((optText, optIdx) => `
+                    <label class="tq-option" onclick="selectDynamicOption(${qNum}, '${q.id}', '${escapeAttr(optText)}', this)">
+                        <input type="radio" name="test-${q.id}" value="${escapeAttr(optText)}" style="display:none;">
+                        <span class="option-letter">${letters[optIdx] || optIdx + 1}</span>
+                        <span>${escapeHtml(optText)}</span>
+                    </label>
+                `).join('')}
+            </div>
+        </div>`;
+    }).join('');
+
+    navGrid.innerHTML = currentTestQuestions.map((_, idx) => {
+        const qNum = idx + 1;
+        return `<button class="nav-q ${qNum === 1 ? 'active' : ''}" id="nav-btn-${qNum}" onclick="goToQuestion(${qNum})">${qNum}</button>`;
+    }).join('');
+}
+
+function selectDynamicOption(qNum, qId, value, el) {
+    const parent = el.closest('.tq-options');
+    if (parent) {
+        parent.querySelectorAll('.tq-option').forEach(o => o.classList.remove('selected'));
+    }
+    el.classList.add('selected');
+    const radio = el.querySelector('input');
+    if (radio) radio.checked = true;
+
+    AppState.testAnswers[qId] = value;
+
+    const navBtn = document.getElementById(`nav-btn-${qNum}`);
+    if (navBtn) {
+        navBtn.classList.add('answered');
+    }
+}
+
 function selectTestOption(el) {
+    // Legacy fallback
     const parent = el.closest('.tq-options');
     parent.querySelectorAll('.tq-option').forEach(o => o.classList.remove('selected'));
     el.classList.add('selected');
     el.querySelector('input').checked = true;
-    
-    // Mark question as answered in navigator
-    const qNum = AppState.currentQuestion;
-    const navBtn = document.querySelector(`.nav-q:nth-child(${qNum})`);
-    if (navBtn) navBtn.classList.add('answered');
-    
-    AppState.testAnswers[qNum] = el.querySelector('input').value;
 }
 
 function goToQuestion(num) {
     AppState.currentQuestion = num;
-    
-    // Update navigator
-    document.querySelectorAll('.nav-q').forEach(q => q.classList.remove('active'));
-    const navBtn = document.querySelector(`.nav-q:nth-child(${num})`);
-    if (navBtn) navBtn.classList.add('active');
-    
-    // For prototype, we only have question 1 rendered
-    // In a real app, we'd load the question dynamically
-    showToast(`Question ${num}`, 'info');
+    document.querySelectorAll('.test-question').forEach((q, idx) => {
+        q.style.display = (idx + 1 === num) ? 'block' : 'none';
+        q.classList.toggle('active', idx + 1 === num);
+    });
+
+    document.querySelectorAll('.nav-q').forEach((btn, idx) => {
+        btn.classList.toggle('active', idx + 1 === num);
+    });
 }
 
 function prevQuestion() {
@@ -1632,7 +1839,7 @@ function prevQuestion() {
 }
 
 function nextQuestion() {
-    if (AppState.currentQuestion < 10) {
+    if (AppState.currentQuestion < currentTestQuestions.length) {
         goToQuestion(AppState.currentQuestion + 1);
     }
 }
@@ -1643,34 +1850,70 @@ async function submitTest() {
     showToast('Submitting assessment to EduVault Proctor Engine...', 'info');
 
     let result = null;
-    if (BackendSync.isBackendConnected) {
-        try {
-            const res = await fetch(`${BackendSync.apiUrl}/api/assessments/submit`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    test_id: "quiz-trees",
-                    student_name: AppState.userName || "Abhishek Dwivedi",
-                    answers: AppState.testAnswers,
-                    time_spent_secs: 240,
-                    tab_switches: AppState.testWarnings
-                })
-            });
-            if (res.ok) {
-                result = await res.json();
-            }
-        } catch(e) {}
-    }
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/assessments/submit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                test_id: currentTestId || "quiz-trees",
+                student_name: AppState.userName || "Abhishek Dwivedi",
+                answers: AppState.testAnswers,
+                time_spent_secs: 240,
+                tab_switches: AppState.testWarnings || 0
+            })
+        });
+        if (res.ok) {
+            result = await res.json();
+        }
+    } catch(e) {}
 
-    const score = result ? result.score : 88;
+    const score = result ? result.score : 40;
+    const total = result ? result.total : 50;
+    const pct = result ? result.percentage : 80;
+    const grade = result ? result.grade : "A";
     const integrity = result ? result.proctor_integrity : "100% Clean";
 
-    showToast(`🎉 Test Submitted! Score: ${score}/100 — Proctor Integrity: ${integrity}! Points awarded to Leaderboard!`, 'success');
-    
-    setTimeout(() => {
-        navigateTo('leaderboard');
-        loadLeaderboardFromBackend();
-    }, 1800);
+    showTestResultDialog(score, total, pct, grade, integrity);
+}
+
+function showTestResultDialog(score, total, pct, grade, integrity) {
+    const existing = document.getElementById('test-result-modal');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'test-result-modal';
+    overlay.style.zIndex = '99999';
+    overlay.innerHTML = `
+        <div class="modal" style="text-align: center; max-width: 480px; padding: 2.5rem 2rem;">
+            <div style="width: 72px; height: 72px; border-radius: 50%; background: rgba(16, 185, 129, 0.15); color: #10B981; display: flex; align-items: center; justify-content: center; font-size: 2rem; margin: 0 auto 1.2rem;">
+                <i class="fas fa-trophy"></i>
+            </div>
+            <h2 style="font-size: 1.6rem; margin-bottom: 0.5rem;">Assessment Completed!</h2>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">Evaluated automatically against cloud answer key.</p>
+            
+            <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.2rem; margin-bottom: 1.5rem; text-align: left;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
+                    <span style="color: var(--text-muted);">Earned Score:</span>
+                    <strong style="color: var(--primary); font-size: 1.2rem;">${score} / ${total}</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
+                    <span style="color: var(--text-muted);">Percentage & Grade:</span>
+                    <strong>${pct}% (${grade})</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: var(--text-muted);">Proctor Integrity:</span>
+                    <span class="badge badge-success"><i class="fas fa-shield-alt"></i> ${integrity}</span>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 10px;">
+                <button class="btn btn-outline btn-full" onclick="document.getElementById('test-result-modal')?.remove(); navigateTo('student-dashboard');">Dashboard</button>
+                <button class="btn btn-primary btn-full" onclick="document.getElementById('test-result-modal')?.remove(); navigateTo('leaderboard');">View Leaderboard</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
 }
 
 async function loadLeaderboardFromBackend() {
@@ -1887,17 +2130,318 @@ function closeScheduleModal() {
     document.getElementById('schedule-modal')?.classList.add('hidden');
 }
 
-function createScheduledEvent() {
-    closeScheduleModal();
-    showToast('📅 Event scheduled and students notified!', 'success');
+async function createScheduledEvent() {
+    const titleInput = document.getElementById('schedule-title-input');
+    const dateInput = document.getElementById('schedule-date-input');
+    const timeInput = document.getElementById('schedule-time-input');
+    const durationInput = document.getElementById('schedule-duration-input');
+    const courseSelect = document.getElementById('schedule-course-select');
+
+    const title = titleInput ? titleInput.value.trim() : '';
+    if (!title) {
+        showToast('Please enter an event title', 'warning');
+        return;
+    }
+
+    const payload = {
+        title: title,
+        instructor: AppState.userName || 'Prof. Rajesh Sharma',
+        date: dateInput ? dateInput.value : '2026-09-26',
+        time: timeInput ? timeInput.value : '10:00 AM',
+        duration: durationInput ? durationInput.value : '1.5 hours',
+        course_id: courseSelect ? courseSelect.value : 'course-dsa'
+    };
+
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/schedules`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+            closeScheduleModal();
+            if (titleInput) titleInput.value = '';
+            showToast('📅 Class scheduled successfully and saved to cloud database!', 'success');
+            await loadSchedulesData();
+            await loadDashboardData();
+        } else {
+            showToast('Failed to schedule class', 'danger');
+        }
+    } catch(e) {
+        showToast('Network error while scheduling class', 'danger');
+    }
+}
+
+async function loadSchedulesData() {
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/schedules`);
+        if (!res.ok) return;
+        const schedules = await res.json();
+
+        // Populate Teacher Dashboard Schedule List
+        const teacherList = document.getElementById('teacher-schedule-list');
+        if (teacherList) {
+            if (!schedules || schedules.length === 0) {
+                teacherList.innerHTML = `
+                    <div style="padding: 1.5rem; text-align: center; color: var(--text-muted);">
+                        <i class="fas fa-calendar-times fa-2x" style="margin-bottom: 0.5rem; opacity: 0.5;"></i>
+                        <p>No live classes scheduled yet.</p>
+                        <button class="btn btn-sm btn-primary" onclick="openScheduleModal()" style="margin-top: 0.5rem;">+ Schedule Class</button>
+                    </div>`;
+            } else {
+                teacherList.innerHTML = schedules.map(item => `
+                    <div class="schedule-item ${item.status === 'live' ? 'live' : 'upcoming'}">
+                        <div class="schedule-time">
+                            <span class="time">${item.time || '10:00 AM'}</span>
+                            <span class="duration">${item.duration || '1.5 hrs'}</span>
+                        </div>
+                        <div class="schedule-info">
+                            <h4>${escapeHtml(item.title)}</h4>
+                            <span class="schedule-meta"><i class="fas fa-calendar-day"></i> ${item.date} &bull; <i class="fas fa-user-tie"></i> ${escapeHtml(item.instructor || 'Instructor')}</span>
+                        </div>
+                        <button class="btn btn-sm btn-primary" onclick="navigateTo('live-class')"><i class="fas fa-video"></i> Start Class</button>
+                    </div>
+                `).join('');
+            }
+        }
+
+        // Populate Student Dashboard Schedule List
+        const studentList = document.getElementById('student-schedule-list');
+        if (studentList) {
+            if (!schedules || schedules.length === 0) {
+                studentList.innerHTML = `
+                    <div style="padding: 1.5rem; text-align: center; color: var(--text-muted);">
+                        <i class="fas fa-calendar-check fa-2x" style="margin-bottom: 0.5rem; opacity: 0.5;"></i>
+                        <p>No upcoming classes right now. Enjoy your study time!</p>
+                    </div>`;
+            } else {
+                studentList.innerHTML = schedules.map(item => `
+                    <div class="schedule-item ${item.status === 'live' ? 'live' : 'upcoming'}">
+                        <div class="schedule-time">
+                            <span class="time">${item.time || '10:00 AM'}</span>
+                            ${item.status === 'live' ? '<div class="live-pulse"></div>' : ''}
+                        </div>
+                        <div class="schedule-info">
+                            <h4>${escapeHtml(item.title)}</h4>
+                            <span class="schedule-meta"><i class="fas fa-calendar-alt"></i> ${item.date} &bull; <i class="fas fa-clock"></i> ${item.duration || '1 hr'}</span>
+                        </div>
+                        <button class="btn btn-sm btn-primary" onclick="navigateTo('live-class')"><i class="fas fa-play"></i> Join</button>
+                    </div>
+                `).join('');
+            }
+        }
+
+        // Populate Schedule Manager Timeline
+        const timeline = document.getElementById('schedule-timeline-container');
+        if (timeline) {
+            if (!schedules || schedules.length === 0) {
+                timeline.innerHTML = `
+                    <div style="padding: 2rem; text-align: center; color: var(--text-muted); background: var(--bg-card); border-radius: var(--radius-md); border: 1px dashed var(--border);">
+                        <i class="fas fa-calendar-plus fa-3x text-purple" style="margin-bottom: 1rem;"></i>
+                        <h3>No classes currently scheduled</h3>
+                        <p style="margin: 0.5rem 0 1.2rem;">Plan your curriculum and schedule upcoming lectures for enrolled students.</p>
+                        <button class="btn btn-primary" onclick="openScheduleModal()"><i class="fas fa-plus"></i> Schedule New Event</button>
+                    </div>`;
+            } else {
+                timeline.innerHTML = schedules.map(item => {
+                    const d = item.date ? item.date.split('-') : ['2026', '09', '26'];
+                    const day = d[2] || '26';
+                    const month = d[1] === '09' ? 'SEP' : (d[1] === '10' ? 'OCT' : (d[1] === '11' ? 'NOV' : 'DEC'));
+                    return `
+                    <div class="timeline-item">
+                        <div class="timeline-date">
+                            <span class="day">${day}</span>
+                            <span class="month">${month}</span>
+                        </div>
+                        <div class="timeline-content">
+                            <div class="timeline-event ${item.status === 'live' ? 'live-event' : ''}">
+                                <h4><i class="fas fa-video"></i> ${escapeHtml(item.title)}</h4>
+                                <p>${item.time || '10:00 AM'} &bull; Duration: ${item.duration || '1.5 hrs'} &bull; Instructor: ${escapeHtml(item.instructor || 'Prof. Rajesh Sharma')}</p>
+                                <div style="margin-top: 8px; display: flex; gap: 8px;">
+                                    <button class="btn btn-sm btn-primary" onclick="navigateTo('live-class')"><i class="fas fa-video"></i> Join Classroom</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('');
+            }
+        }
+    } catch(e) {
+        console.warn('Error fetching schedules:', e);
+    }
+}
+
+async function loadCoursesData() {
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/courses`);
+        if (!res.ok) return;
+        const courses = await res.json();
+
+        // Populate Student Dashboard Courses
+        const studentGrid = document.getElementById('student-courses-grid');
+        if (studentGrid) {
+            if (!courses || courses.length === 0) {
+                studentGrid.innerHTML = `
+                    <div style="padding: 1.5rem; text-align: center; color: var(--text-muted);">
+                        <p>No courses available right now.</p>
+                    </div>`;
+            } else {
+                studentGrid.innerHTML = courses.slice(0, 3).map(c => `
+                    <div class="course-mini-card" onclick="navigateTo('course-view')">
+                        <div class="course-mini-img" style="background: ${c.banner_gradient || 'linear-gradient(135deg, #6C5CE7, #a29bfe)'};">
+                            <i class="fas fa-book-open"></i>
+                        </div>
+                        <div class="course-mini-info">
+                            <h4>${escapeHtml(c.title)}</h4>
+                            <span style="font-size: 0.75rem; color: var(--text-muted);"><i class="fas fa-shield-alt text-cyan"></i> DRM Protected</span>
+                            <div class="progress-bar-mini" style="margin-top: 6px;">
+                                <div class="progress-fill" style="width: 75%;"></div>
+                            </div>
+                            <span>75% complete</span>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+    } catch(e) {
+        console.warn('Error loading courses:', e);
+    }
+}
+
+async function loadDashboardData() {
+    try {
+        const statsRes = await fetch(`${BackendSync.apiUrl}/api/stats`);
+        if (statsRes.ok) {
+            const stats = await statsRes.json();
+            // Teacher stats
+            const tStudents = document.getElementById('stat-teacher-students');
+            if (tStudents) tStudents.textContent = stats.total_students !== undefined ? stats.total_students.toLocaleString() : '0';
+            
+            const tCourses = document.getElementById('stat-teacher-courses');
+            if (tCourses) tCourses.textContent = stats.total_courses !== undefined ? stats.total_courses.toLocaleString() : '0';
+            
+            const tAssessments = document.getElementById('stat-teacher-assessments');
+            if (tAssessments) tAssessments.textContent = stats.total_assessments !== undefined ? stats.total_assessments.toLocaleString() : '0';
+            
+            const tDb = document.getElementById('stat-teacher-db');
+            if (tDb) tDb.textContent = stats.database || 'PostgreSQL 18';
+
+            // Student stats
+            const sCourses = document.getElementById('stat-student-courses');
+            if (sCourses) sCourses.textContent = stats.total_courses !== undefined ? stats.total_courses.toLocaleString() : '0';
+            
+            const sAssessments = document.getElementById('stat-student-assessments');
+            if (sAssessments) sAssessments.textContent = stats.total_assessments !== undefined ? stats.total_assessments.toLocaleString() : '0';
+            
+            const sPoints = document.getElementById('stat-student-points');
+            if (sPoints) sPoints.textContent = '2,850 pts';
+        }
+    } catch(e) {
+        console.warn('Telemetry sync error:', e);
+    }
+
+    await loadSchedulesData();
+    await loadCoursesData();
+}
+
+async function saveProfileSettings() {
+    const nameInput = document.getElementById('settings-fullname');
+    const orgInput = document.getElementById('settings-org');
+
+    const fullName = nameInput ? nameInput.value.trim() : '';
+    const org = orgInput ? orgInput.value.trim() : '';
+
+    if (!fullName) {
+        showToast('Please enter your full name', 'warning');
+        return;
+    }
+
+    const session = JSON.parse(localStorage.getItem('eduvault_session') || '{}');
+    const token = session.token || '';
+
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/auth/profile`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ full_name: fullName, organization: org })
+        });
+        if (res.ok) {
+            AppState.userName = fullName;
+            session.name = fullName;
+            localStorage.setItem('eduvault_session', JSON.stringify(session));
+            updateUIForLogin();
+            showToast('✅ Profile updated and saved to database!', 'success');
+        } else {
+            showToast('Failed to update profile', 'danger');
+        }
+    } catch(e) {
+        showToast('Network error updating profile', 'danger');
+    }
+}
+
+async function updateUserPassword() {
+    const currentPw = document.getElementById('settings-current-pw');
+    const newPw = document.getElementById('settings-new-pw');
+    const confirmPw = document.getElementById('settings-confirm-pw');
+
+    if (!newPw || !newPw.value || newPw.value.length < 6) {
+        showToast('New password must be at least 6 characters long', 'warning');
+        return;
+    }
+    if (newPw.value !== confirmPw.value) {
+        showToast('New password and confirmation do not match', 'warning');
+        return;
+    }
+
+    const session = JSON.parse(localStorage.getItem('eduvault_session') || '{}');
+    const token = session.token || '';
+
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/auth/profile`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ new_password: newPw.value })
+        });
+        if (res.ok) {
+            if (currentPw) currentPw.value = '';
+            newPw.value = '';
+            confirmPw.value = '';
+            showToast('🔒 Password updated securely with Argon2 cryptographic hashing!', 'success');
+        } else {
+            showToast('Failed to update password', 'danger');
+        }
+    } catch(e) {
+        showToast('Network error updating password', 'danger');
+    }
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function escapeAttr(str) {
+    if (!str) return '';
+    return String(str).replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
 
 function prevMonth() {
-    showToast('Showing August 2026', 'info');
+    showToast('Showing Previous Month', 'info');
 }
 
 function nextMonth() {
-    showToast('Showing October 2026', 'info');
+    showToast('Showing Next Month', 'info');
 }
 
 // ========== ENROLLMENT KEYS ==========

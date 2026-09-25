@@ -94,3 +94,25 @@ class AIAskRequest(BaseModel):
     question: str
     context_topic: Optional[str] = "Data Structures & Algorithms"
     student_name: Optional[str] = "Student"
+
+# Real-World Creator Models
+class AssessmentCreate(BaseModel):
+    title: str
+    subject: str
+    duration_mins: int = 30
+    total_marks: int = 50
+    difficulty: str = "Intermediate"
+    questions: Optional[List[Dict[str, Any]]] = None
+
+class ScheduleCreate(BaseModel):
+    title: str
+    instructor: str
+    date: str
+    time: str
+    duration: str = "1 hr"
+    course_id: Optional[str] = None
+
+class ProfileUpdateRequest(BaseModel):
+    full_name: Optional[str] = None
+    organization: Optional[str] = None
+    new_password: Optional[str] = None
