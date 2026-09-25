@@ -136,6 +136,12 @@ function navigateTo(page) {
         cleanupLiveClassroomWebRTC();
     }
     
+    if (page === 'teacher-dashboard') {
+        loadEnrollmentKeys();
+    } else if (page === 'student-dashboard') {
+        loadStudentEnrollments();
+    }
+
     if (page === 'test-taking') {
         loadTestQuestions('quiz-trees');
     } else {
@@ -2342,6 +2348,8 @@ async function loadDashboardData() {
 
     await loadSchedulesData();
     await loadCoursesData();
+    await loadEnrollmentKeys();
+    await loadStudentEnrollments();
 }
 
 async function saveProfileSettings() {
@@ -2444,45 +2452,301 @@ function nextMonth() {
     showToast('Showing Next Month', 'info');
 }
 
-// ========== ENROLLMENT KEYS ==========
-function generateKey() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    const segments = [];
-    for (let i = 0; i < 4; i++) {
-        let seg = '';
-        for (let j = 0; j < 4; j++) {
-            seg += chars[Math.floor(Math.random() * chars.length)];
-        }
-        segments.push(seg);
-    }
-    const key = `EDU-${segments[0]}-${segments[1]}`;
-    
+// ========== ENROLLMENT KEYS & STUDENT VERIFICATION SYSTEM ==========
+
+async function loadEnrollmentKeys() {
     const list = document.getElementById('keys-list');
-    if (list) {
-        const item = document.createElement('div');
-        item.className = 'key-item';
-        item.innerHTML = `
-            <div class="key-info">
-                <code>${key}</code>
-                <span>New Course Key</span>
-            </div>
-            <div class="key-actions">
-                <span class="key-usage">0/50 used</span>
-                <button class="btn-icon" title="Copy" onclick="copyKey('${key}')"><i class="fas fa-copy"></i></button>
+    if (!list) return;
+
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/enrollment-keys`);
+        if (!res.ok) throw new Error('Failed to load keys');
+        const keys = await res.json();
+
+        if (!keys || keys.length === 0) {
+            list.innerHTML = `
+                <div style="padding: 1.5rem; text-align: center; color: var(--text-muted);">
+                    <i class="fas fa-key fa-2x" style="opacity: 0.4; margin-bottom: 8px;"></i>
+                    <p>No enrollment keys created yet. Generate your first batch key above!</p>
+                </div>
+            `;
+            return;
+        }
+
+        list.innerHTML = keys.map(k => {
+            const current = k.current_uses || 0;
+            const max = k.max_uses || 50;
+            const pct = Math.min(100, Math.round((current / max) * 100));
+            const perms = Array.isArray(k.permissions) ? k.permissions : ["live", "recordings", "materials", "tests", "exercises"];
+            
+            return `
+                <div class="key-item-rich">
+                    <div class="key-item-header">
+                        <div>
+                            <span class="key-code-badge">${escapeHtml(k.key_code)}</span>
+                            <div class="key-batch-title" style="margin-top: 4px;">${escapeHtml(k.batch_name || 'General Batch')}</div>
+                            <div class="key-course-subtitle"><i class="fas fa-graduation-cap"></i> ${escapeHtml(k.course_title || k.course_id || 'All-Access Curriculum')}</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <button class="btn btn-sm btn-outline" onclick="copyKey('${escapeHtml(k.key_code)}')">
+                                <i class="fas fa-copy"></i> Copy Key
+                            </button>
+                        </div>
+                    </div>
+                    <div class="key-progress-wrapper">
+                        <div class="key-progress-bar">
+                            <div class="key-progress-fill" style="width: ${pct}%;"></div>
+                        </div>
+                        <span class="key-usage" style="white-space: nowrap; font-weight: 600;">${current} / ${max} enrolled</span>
+                    </div>
+                    <div class="key-permission-chips">
+                        ${perms.map(p => `<span class="perm-chip"><i class="fas fa-check"></i> ${p}</span>`).join('')}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch(err) {
+        console.warn('Error loading enrollment keys:', err);
+        list.innerHTML = `
+            <div style="padding: 1rem; color: #f87171; text-align: center; font-size: 0.85rem;">
+                <i class="fas fa-exclamation-triangle"></i> Failed to sync keys from database.
             </div>
         `;
-        list.appendChild(item);
+    }
+}
+
+function openGenerateKeyModal() {
+    const modal = document.getElementById('modal-generate-key');
+    if (!modal) return;
+    document.getElementById('gen-key-result-box')?.classList.add('hidden');
+    
+    // Populate courses dropdown if available
+    const select = document.getElementById('gen-key-course');
+    if (select && typeof AppState !== 'undefined' && AppState.courses && AppState.courses.length > 0) {
+        select.innerHTML = AppState.courses.map(c => `
+            <option value="${c.id}">${escapeHtml(c.title)}</option>
+        `).join('');
     }
     
-    showToast(`🔑 New enrollment key generated: ${key}`, 'success');
+    modal.classList.remove('hidden');
+}
+
+function closeGenerateKeyModal() {
+    document.getElementById('modal-generate-key')?.classList.add('hidden');
+}
+
+async function handleGenerateBatchKeySubmit() {
+    const courseSelect = document.getElementById('gen-key-course');
+    const batchInput = document.getElementById('gen-key-batch-name');
+    const maxUsesInput = document.getElementById('gen-key-max-uses');
+    const btn = document.getElementById('btn-submit-generate-key');
+
+    const courseId = courseSelect ? courseSelect.value : 'course-dsa';
+    const batchName = batchInput ? batchInput.value.trim() : '';
+    const maxUses = maxUsesInput ? parseInt(maxUsesInput.value, 10) : 50;
+
+    if (!batchName) {
+        showToast('Please provide a batch or cohort title', 'warning');
+        return;
+    }
+
+    const permissions = [];
+    if (document.getElementById('perm-live')?.checked) permissions.push('live');
+    if (document.getElementById('perm-recordings')?.checked) permissions.push('recordings');
+    if (document.getElementById('perm-materials')?.checked) permissions.push('materials');
+    if (document.getElementById('perm-tests')?.checked) permissions.push('tests');
+    if (document.getElementById('perm-exercises')?.checked) permissions.push('exercises');
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
+    }
+
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/enrollment-keys`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                course_id: courseId,
+                batch_name: batchName,
+                max_uses: maxUses,
+                permissions: permissions
+            })
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || 'Failed to generate key');
+        }
+
+        const data = await res.json();
+        
+        // Show result box
+        const resultBox = document.getElementById('gen-key-result-box');
+        const display = document.getElementById('gen-key-display');
+        if (resultBox && display) {
+            display.textContent = data.key_code;
+            resultBox.classList.remove('hidden');
+        }
+
+        // Copy immediately to clipboard
+        copyKey(data.key_code);
+        showToast(`🎉 Batch Key ${data.key_code} active and copied to clipboard!`, 'success');
+
+        // Reload keys list
+        await loadEnrollmentKeys();
+    } catch(e) {
+        showToast(e.message || 'Error generating key', 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-magic"></i> Generate & Activate Key';
+        }
+    }
 }
 
 function copyKey(key) {
+    if (!key) return;
     navigator.clipboard?.writeText(key).then(() => {
         showToast(`📋 Key copied: ${key}`, 'success');
     }).catch(() => {
         showToast(`Key: ${key}`, 'info');
     });
+}
+
+// Student Batch Authorization & Claim Logic
+async function loadStudentEnrollments() {
+    const container = document.getElementById('student-verified-batches-container');
+    if (!container) return;
+
+    const email = (AppState.userRole === 'student' && AppState.userEmail) || localStorage.getItem('eduvault_user_email') || 'student@eduvault.io';
+
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/student/enrollments?email=${encodeURIComponent(email)}`);
+        if (!res.ok) throw new Error('Failed to load student enrollments');
+        const enrollments = await res.json();
+
+        // Update enrolled courses count stat
+        const sCourses = document.getElementById('stat-student-courses');
+        if (sCourses && enrollments) {
+            sCourses.textContent = enrollments.length.toString();
+        }
+
+        if (!enrollments || enrollments.length === 0) {
+            container.innerHTML = `
+                <div style="padding: 1.5rem; text-align: center; color: var(--text-muted); background: rgba(255,255,255,0.02); border-radius: var(--radius-md); border: 1px dashed var(--border);">
+                    <i class="fas fa-shield-alt fa-2x text-cyan" style="margin-bottom: 8px; opacity: 0.6;"></i>
+                    <p style="font-size: 0.9rem; margin-bottom: 4px;"><strong>No active batch enrollment yet</strong></p>
+                    <p style="font-size: 0.8rem;">Enter your teacher's enrollment key above to verify your eligibility and unlock continuous lecture & test access!</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = enrollments.map(en => {
+            const perms = Array.isArray(en.permissions) ? en.permissions : ["live", "recordings", "materials", "tests", "exercises"];
+            const formattedDate = en.enrolled_at ? new Date(en.enrolled_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Verified';
+
+            return `
+                <div class="verified-batch-card">
+                    <div style="display: flex; align-items: center; gap: 14px; min-width: 280px;">
+                        <div style="width: 44px; height: 44px; border-radius: 10px; background: ${en.banner_gradient || 'linear-gradient(135deg, #6366F1, #06B6D4)'}; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 1.2rem; flex-shrink: 0;">
+                            <i class="fas fa-check-shield"></i>
+                        </div>
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <h4 style="font-size: 0.95rem; font-weight: 700; margin: 0; color: var(--text-primary);">${escapeHtml(en.batch_name || en.course_title || 'Enrolled Batch')}</h4>
+                                <span class="batch-status-tag"><i class="fas fa-check"></i> Authorized</span>
+                            </div>
+                            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">
+                                <i class="fas fa-book"></i> ${escapeHtml(en.course_title || 'Curriculum')} &bull; <i class="fas fa-user-tie"></i> ${escapeHtml(en.instructor || 'Prof. Rajesh Sharma')}
+                            </div>
+                            <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">
+                                Verified on ${formattedDate} &bull; Key: <code>${escapeHtml(en.key_code)}</code>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <div class="key-permission-chips" style="margin: 0;">
+                            ${perms.map(p => `<span class="perm-chip"><i class="fas fa-unlock"></i> ${p}</span>`).join('')}
+                        </div>
+                        <button class="btn btn-sm btn-primary" onclick="navigateTo('course-view')">
+                            <i class="fas fa-door-open"></i> Enter Batch Vault
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+    } catch(err) {
+        console.warn('Error loading student enrollments:', err);
+    }
+}
+
+function fillClaimKey(code) {
+    const input = document.getElementById('claim-key-input');
+    if (input) {
+        input.value = code;
+        input.focus();
+        input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+}
+
+async function handleClaimKeySubmit() {
+    const input = document.getElementById('claim-key-input');
+    const btn = document.getElementById('btn-claim-key');
+    if (!input) return;
+
+    const rawKey = input.value.trim().toUpperCase();
+    if (!rawKey) {
+        showToast('Please enter an enrollment key', 'warning');
+        input.focus();
+        return;
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
+    }
+
+    const email = (AppState.userRole === 'student' && AppState.userEmail) || localStorage.getItem('eduvault_user_email') || 'student@eduvault.io';
+    const name = AppState.userName || 'Student';
+
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/enrollment-keys/claim`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                key_code: rawKey,
+                student_name: name,
+                student_email: email
+            })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.detail || 'Eligibility verification failed');
+        }
+
+        if (data.status === 'already_enrolled') {
+            showToast(`ℹ️ ${data.message}`, 'info');
+        } else {
+            showToast(`🎉 ${data.message}`, 'success');
+        }
+
+        // Refresh verified batches
+        await loadStudentEnrollments();
+        await loadCoursesData();
+        input.value = '';
+
+    } catch(err) {
+        showToast(err.message || 'Invalid enrollment key. Please verify with your tutor.', 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-shield-alt"></i> Verify & Claim Access';
+        }
+    }
 }
 
 // ========== SETTINGS ==========

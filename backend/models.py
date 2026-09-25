@@ -116,3 +116,15 @@ class ProfileUpdateRequest(BaseModel):
     full_name: Optional[str] = None
     organization: Optional[str] = None
     new_password: Optional[str] = None
+
+class EnrollmentKeyCreate(BaseModel):
+    course_id: str
+    batch_name: str
+    max_uses: int = 50
+    permissions: Optional[List[str]] = ["live", "recordings", "materials", "tests", "exercises"]
+
+class EnrollmentKeyClaimRequest(BaseModel):
+    key_code: str
+    student_name: Optional[str] = "Student"
+    student_email: Optional[str] = "student@eduvault.io"
+

@@ -1,6 +1,8 @@
 import os
 import json
 import asyncio
+import secrets
+import string
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 
@@ -21,7 +23,9 @@ from models import (
     AIAskRequest,
     AssessmentCreate,
     ScheduleCreate,
-    ProfileUpdateRequest
+    ProfileUpdateRequest,
+    EnrollmentKeyCreate,
+    EnrollmentKeyClaimRequest
 )
 from ai_service import generate_ai_catchup_summary, answer_student_doubt
 
@@ -266,6 +270,174 @@ def create_course(req: CourseCreate):
     conn.commit()
     conn.close()
     return {"status": "created", "id": course_id, "title": req.title}
+
+# =====================================================================
+# ENROLLMENT KEYS & STUDENT ELIGIBILITY VERIFICATION SYSTEM
+# =====================================================================
+@app.get("/api/enrollment-keys")
+def get_enrollment_keys(course_id: Optional[str] = Query(None)):
+    """Fetch active enrollment keys with usage counts and unlocked permissions"""
+    conn = get_db()
+    cursor = conn.cursor()
+    if course_id:
+        cursor.execute("""
+            SELECT ek.*, c.title as course_title, c.instructor 
+            FROM enrollment_keys ek 
+            LEFT JOIN courses c ON ek.course_id = c.id
+            WHERE ek.course_id = ?
+            ORDER BY ek.created_at DESC
+        """, (course_id,))
+    else:
+        cursor.execute("""
+            SELECT ek.*, c.title as course_title, c.instructor 
+            FROM enrollment_keys ek 
+            LEFT JOIN courses c ON ek.course_id = c.id
+            ORDER BY ek.created_at DESC
+        """)
+    rows = cursor.fetchall()
+    conn.close()
+    
+    results = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["permissions"] = json.loads(d.get("permissions_json", "[]"))
+        except Exception:
+            d["permissions"] = ["live", "recordings", "materials", "tests", "exercises"]
+        results.append(d)
+    return results
+
+@app.post("/api/enrollment-keys")
+def create_enrollment_key(req: EnrollmentKeyCreate):
+    """Teachers generate batch enrollment keys with usage limit and permissions"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Generate clean, memorable key code: EDU-<TAG>-<4 CHARS>
+    tag = req.course_id.replace("course-", "").upper()[:6] if req.course_id else "GEN"
+    suffix = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(4))
+    key_code = f"EDU-{tag}-{suffix}"
+    
+    now_iso = datetime.now().isoformat()
+    perms_json = json.dumps(req.permissions or ["live", "recordings", "materials", "tests", "exercises"])
+    
+    cursor.execute("""
+        INSERT INTO enrollment_keys (key_code, course_id, batch_name, created_by, max_uses, current_uses, permissions_json, is_active, created_at)
+        VALUES (?, ?, ?, ?, ?, 0, ?, 1, ?)
+    """, (key_code, req.course_id, req.batch_name, "Prof. Rajesh Sharma", req.max_uses, perms_json, now_iso))
+    conn.commit()
+    conn.close()
+    
+    return {
+        "status": "success",
+        "key_code": key_code,
+        "course_id": req.course_id,
+        "batch_name": req.batch_name,
+        "max_uses": req.max_uses,
+        "current_uses": 0,
+        "permissions": req.permissions,
+        "created_at": now_iso
+    }
+
+@app.post("/api/enrollment-keys/claim")
+def claim_enrollment_key(req: EnrollmentKeyClaimRequest):
+    """Students claim an enrollment key to verify eligibility and unlock lectures, materials, tests, exercises"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    clean_key = req.key_code.strip().upper()
+    cursor.execute("SELECT * FROM enrollment_keys WHERE UPPER(key_code) = UPPER(?)", (clean_key,))
+    key_row = cursor.fetchone()
+    
+    if not key_row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Invalid enrollment key. Please check the code provided by your teacher or institution.")
+    
+    key_dict = dict(key_row)
+    if not key_dict.get("is_active", 1):
+        conn.close()
+        raise HTTPException(status_code=400, detail="This enrollment key has been deactivated by the teaching institution.")
+    
+    current_uses = key_dict.get("current_uses", 0)
+    max_uses = key_dict.get("max_uses", 50)
+    if current_uses >= max_uses:
+        conn.close()
+        raise HTTPException(status_code=400, detail=f"Enrollment capacity reached ({max_uses}/{max_uses} students enrolled). Contact your tutor.")
+        
+    student_email = (req.student_email or "student@eduvault.io").strip().lower()
+    cursor.execute("""
+        SELECT id FROM student_enrollments 
+        WHERE student_email = ? AND (key_code = ? OR course_id = ?)
+    """, (student_email, key_dict["key_code"], key_dict["course_id"]))
+    existing = cursor.fetchone()
+    
+    perms = []
+    try:
+        perms = json.loads(key_dict.get("permissions_json", "[]"))
+    except Exception:
+        perms = ["live", "recordings", "materials", "tests", "exercises"]
+
+    if existing:
+        conn.close()
+        return {
+            "status": "already_enrolled",
+            "verified": True,
+            "message": f"You are already authorized for '{key_dict.get('batch_name')}'. All lectures, materials, and tests are unlocked on your dashboard!",
+            "batch_name": key_dict.get("batch_name"),
+            "course_id": key_dict.get("course_id"),
+            "key_code": key_dict.get("key_code"),
+            "permissions": perms
+        }
+    
+    now_iso = datetime.now().isoformat()
+    cursor.execute("""
+        INSERT INTO student_enrollments (student_email, student_name, key_code, course_id, batch_name, permissions_json, enrolled_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (student_email, req.student_name or "Student", key_dict["key_code"], key_dict["course_id"], key_dict["batch_name"], key_dict.get("permissions_json", '[]'), now_iso))
+    
+    cursor.execute("UPDATE enrollment_keys SET current_uses = current_uses + 1 WHERE key_code = ?", (key_dict["key_code"],))
+    cursor.execute("UPDATE courses SET enrolled_count = enrolled_count + 1 WHERE id = ?", (key_dict["course_id"],))
+    conn.commit()
+    
+    cursor.execute("SELECT * FROM courses WHERE id = ?", (key_dict["course_id"],))
+    course_row = cursor.fetchone()
+    conn.close()
+    
+    return {
+        "status": "success",
+        "verified": True,
+        "message": f"Eligibility verified! You are officially enrolled in '{key_dict.get('batch_name')}'.",
+        "batch_name": key_dict.get("batch_name"),
+        "key_code": key_dict.get("key_code"),
+        "course": dict(course_row) if course_row else None,
+        "permissions": perms
+    }
+
+@app.get("/api/student/enrollments")
+def get_student_enrollments(email: str = Query("student@eduvault.io")):
+    """Get all enrolled/authorized courses & batches for a student"""
+    conn = get_db()
+    cursor = conn.cursor()
+    clean_email = email.strip().lower()
+    cursor.execute("""
+        SELECT se.*, c.title as course_title, c.instructor, c.category, c.banner_gradient, c.rating, c.lessons_count
+        FROM student_enrollments se
+        LEFT JOIN courses c ON se.course_id = c.id
+        WHERE se.student_email = ?
+        ORDER BY se.enrolled_at DESC
+    """, (clean_email,))
+    rows = cursor.fetchall()
+    conn.close()
+    
+    results = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["permissions"] = json.loads(d.get("permissions_json", "[]"))
+        except Exception:
+            d["permissions"] = ["live", "recordings", "materials", "tests", "exercises"]
+        results.append(d)
+    return results
 
 # --- Leaderboard ---
 @app.get("/api/leaderboard")

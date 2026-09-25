@@ -703,32 +703,18 @@
                         </div>
                     </div>
 
-                    <!-- Student Enrollment Keys -->
+                    <!-- Student Enrollment & Batch Verification Keys -->
                     <div class="dash-card">
                         <div class="dash-card-header">
-                            <h3><i class="fas fa-key"></i> Enrollment Keys</h3>
-                            <button class="btn btn-sm btn-primary" onclick="generateKey()"><i class="fas fa-plus"></i> Generate</button>
+                            <div>
+                                <h3><i class="fas fa-key text-cyan"></i> Batch Enrollment & Eligibility Keys</h3>
+                                <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">Issue secure verification keys to students with usage limits and granular permissions</p>
+                            </div>
+                            <button class="btn btn-sm btn-primary" onclick="openGenerateKeyModal()"><i class="fas fa-plus"></i> Generate Batch Key</button>
                         </div>
                         <div class="keys-list" id="keys-list">
-                            <div class="key-item">
-                                <div class="key-info">
-                                    <code>EDU-DSA-2026-X7K9</code>
-                                    <span>Data Structures Course</span>
-                                </div>
-                                <div class="key-actions">
-                                    <span class="key-usage">32/50 used</span>
-                                    <button class="btn-icon" title="Copy" onclick="copyKey('EDU-DSA-2026-X7K9')"><i class="fas fa-copy"></i></button>
-                                </div>
-                            </div>
-                            <div class="key-item">
-                                <div class="key-info">
-                                    <code>EDU-ML-2026-P3R5</code>
-                                    <span>Machine Learning Course</span>
-                                </div>
-                                <div class="key-actions">
-                                    <span class="key-usage">58/100 used</span>
-                                    <button class="btn-icon" title="Copy" onclick="copyKey('EDU-ML-2026-P3R5')"><i class="fas fa-copy"></i></button>
-                                </div>
+                            <div class="empty-state-card" style="padding: 1.5rem; text-align: center; color: var(--text-muted);">
+                                <i class="fas fa-spinner fa-spin"></i> Loading active keys from cloud database...
                             </div>
                         </div>
                     </div>
@@ -781,7 +767,51 @@
                     </div>
                 </div>
 
+                <!-- Persistent Student Authorization & Key Claim Banner -->
+                <div class="claim-card-banner">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+                        <div>
+                            <span class="badge badge-success" style="margin-bottom: 6px; display: inline-flex; align-items: center; gap: 6px;">
+                                <i class="fas fa-user-check"></i> Persistent Eligibility Verification
+                            </span>
+                            <h2 style="font-size: 1.35rem; font-weight: 700; margin: 4px 0;">Claim Course & Batch Access Key</h2>
+                            <p style="color: var(--text-muted); font-size: 0.88rem; max-width: 680px; margin-top: 4px;">
+                                Enter the enrollment key provided by your teacher or teaching company. Once verified, you stay logged in permanently with full 1-click access to all live classes, recordings, exercises, and protected notes—no meeting codes or Zoom IDs required!
+                            </p>
+                        </div>
+                    </div>
+                    <div class="claim-input-group">
+                        <input type="text" id="claim-key-input" class="claim-input" placeholder="ENTER KEY (e.g. EDU-DSA-2026-ALPHA)" maxlength="32">
+                        <button class="btn btn-primary" id="btn-claim-key" onclick="handleClaimKeySubmit()" style="white-space: nowrap; padding: 12px 24px; font-weight: 600;">
+                            <i class="fas fa-shield-alt"></i> Verify & Claim Access
+                        </button>
+                    </div>
+                    <div class="claim-demo-pills">
+                        <span><i class="fas fa-key text-cyan"></i> Active Batch Keys:</span>
+                        <button type="button" class="claim-pill-btn" onclick="fillClaimKey('EDU-DSA-2026-ALPHA')">EDU-DSA-2026-ALPHA (DSA Honors)</button>
+                        <button type="button" class="claim-pill-btn" onclick="fillClaimKey('EDU-ML-NEURAL-PRO')">EDU-ML-NEURAL-PRO (Deep Learning)</button>
+                        <button type="button" class="claim-pill-btn" onclick="fillClaimKey('EDU-FULLSTACK-WEB')">EDU-FULLSTACK-WEB (Engineering)</button>
+                        <button type="button" class="claim-pill-btn" onclick="fillClaimKey('EDU-CYBER-SEC-VAULT')">EDU-CYBER-SEC-VAULT (Security)</button>
+                    </div>
+                </div>
+
                 <div class="dashboard-grid">
+                    <!-- Authorized Batches & Unlocked Resources -->
+                    <div class="dash-card" style="grid-column: 1 / -1;">
+                        <div class="dash-card-header">
+                            <div>
+                                <h3><i class="fas fa-certificate text-green"></i> My Authorized Batches & Verified Access</h3>
+                                <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">Your verified credentials unlock continuous class access without Zoom codes or meeting IDs</p>
+                            </div>
+                            <span class="batch-status-tag"><i class="fas fa-check-double"></i> Persistent Authorization Active</span>
+                        </div>
+                        <div id="student-verified-batches-container">
+                            <div class="empty-state-card" style="padding: 1.5rem; text-align: center; color: var(--text-muted);">
+                                <i class="fas fa-spinner fa-spin"></i> Checking verified batch authorizations...
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Live & Upcoming -->
                     <div class="dash-card">
                         <div class="dash-card-header">
@@ -2694,6 +2724,66 @@ If BF > 1 or BF < -1, rotation needed!</code></pre>
             <div id="int-modal-body" class="integration-modal-body">
                 <!-- Dynamically populated per integration -->
             </div>
+        </div>
+    </div>
+
+    <!-- ========== GENERATE BATCH ENROLLMENT KEY MODAL ========== -->
+    <div class="modal-overlay hidden" id="modal-generate-key">
+        <div class="modal" style="max-width: 560px; width: 95vw;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i class="fas fa-key text-cyan" style="font-size: 1.4rem;"></i>
+                    <h2 style="font-size: 1.25rem; margin: 0;">Generate Batch Enrollment Key</h2>
+                </div>
+                <button class="modal-close" onclick="closeGenerateKeyModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <form id="form-generate-key" onsubmit="event.preventDefault(); handleGenerateBatchKeySubmit();">
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label style="font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; display: block;">Select Course / Curriculum</label>
+                    <select id="gen-key-course" class="form-control" style="width: 100%; padding: 10px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary); font-size: 0.9rem;" required>
+                        <option value="course-dsa">Advanced Data Structures & Algorithms</option>
+                        <option value="course-ml">Deep Learning & Neural Architectures</option>
+                        <option value="course-web">Full-Stack Web Systems & High Concurrency</option>
+                        <option value="course-sec">Cybersecurity & DRM Cryptographic Vaults</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label style="font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; display: block;">Batch / Cohort Title</label>
+                    <input type="text" id="gen-key-batch-name" class="form-control" placeholder="e.g. Spring 2026 Honors Fellowship" required style="width: 100%; padding: 10px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary); font-size: 0.9rem;">
+                </div>
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label style="font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; display: block;">Maximum Student Enrollment Limit</label>
+                    <input type="number" id="gen-key-max-uses" class="form-control" value="50" min="1" max="1000" required style="width: 100%; padding: 10px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary); font-size: 0.9rem;">
+                    <small style="color: var(--text-muted); font-size: 0.76rem;">The key automatically closes enrollment once this limit is reached.</small>
+                </div>
+                <div class="form-group" style="margin-bottom: 18px;">
+                    <label style="font-size: 0.85rem; font-weight: 600; margin-bottom: 8px; display: block;">Unlocked Batch Permissions</label>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.82rem;">
+                        <label style="display: flex; align-items: center; gap: 8px;"><input type="checkbox" id="perm-live" checked> <span>🎥 Live Classroom</span></label>
+                        <label style="display: flex; align-items: center; gap: 8px;"><input type="checkbox" id="perm-recordings" checked> <span>📼 DRM Video Vault</span></label>
+                        <label style="display: flex; align-items: center; gap: 8px;"><input type="checkbox" id="perm-materials" checked> <span>📚 Study Materials & PDFs</span></label>
+                        <label style="display: flex; align-items: center; gap: 8px;"><input type="checkbox" id="perm-tests" checked> <span>📝 Proctored Tests & Quizzes</span></label>
+                        <label style="display: flex; align-items: center; gap: 8px;"><input type="checkbox" id="perm-exercises" checked> <span>💻 Coding Exercises</span></label>
+                    </div>
+                </div>
+
+                <div id="gen-key-result-box" class="hidden" style="margin-bottom: 16px; padding: 14px; background: rgba(6, 182, 212, 0.1); border: 1px solid rgba(6, 182, 212, 0.3); border-radius: var(--radius-md);">
+                    <div style="font-size: 0.8rem; color: #06B6D4; font-weight: 600; margin-bottom: 6px;">🎉 Key Generated & Persisted to Cloud Database:</div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <code id="gen-key-display" style="font-size: 1.1rem; font-weight: 700; color: #fff; background: rgba(0,0,0,0.3); padding: 6px 12px; border-radius: 6px; letter-spacing: 1px; flex: 1;"></code>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="copyKey(document.getElementById('gen-key-display').textContent)">
+                            <i class="fas fa-copy"></i> Copy
+                        </button>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                    <button type="button" class="btn btn-ghost" onclick="closeGenerateKeyModal()">Close</button>
+                    <button type="submit" class="btn btn-primary" id="btn-submit-generate-key">
+                        <i class="fas fa-magic"></i> Generate & Activate Key
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 

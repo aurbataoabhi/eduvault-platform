@@ -66,8 +66,9 @@ class UnifiedCursor:
     def execute(self, sql, params=None):
         params = params or ()
         if self._is_pg:
-            # PostgreSQL uses %s placeholders instead of ?
-            pg_sql = sql.replace("?", "%s")
+            # Escape literal % characters before replacing ? with %s
+            escaped_sql = sql.replace("%", "%%")
+            pg_sql = escaped_sql.replace("?", "%s")
             # Replace SQLite AUTOINCREMENT with SERIAL / ON CONFLICT
             pg_sql = pg_sql.replace("INSERT OR IGNORE", "INSERT")
             if "INSERT INTO" in sql and "ON CONFLICT" not in pg_sql:
@@ -94,7 +95,8 @@ class UnifiedCursor:
 
     def executemany(self, sql, seq_of_params):
         if self._is_pg:
-            pg_sql = sql.replace("?", "%s")
+            escaped_sql = sql.replace("%", "%%")
+            pg_sql = escaped_sql.replace("?", "%s")
             pg_sql = pg_sql.replace("INSERT OR IGNORE", "INSERT")
             if "INSERT INTO" in sql and "ON CONFLICT" not in pg_sql:
                 if "users (" in pg_sql:
@@ -334,9 +336,79 @@ def init_db():
         duration_mins INTEGER DEFAULT 45,
         total_marks INTEGER DEFAULT 100,
         questions_count INTEGER DEFAULT 10,
-        difficulty TEXT DEFAULT 'Intermediate'
+        difficulty TEXT DEFAULT 'Intermediate',
+        questions_json TEXT
     );
     """)
+
+    # 11. Student Submissions table
+    cursor.execute(f"""
+    CREATE TABLE IF NOT EXISTS student_submissions (
+        id {id_primary_key},
+        assessment_id TEXT NOT NULL,
+        student_name TEXT NOT NULL,
+        score INTEGER NOT NULL,
+        total_marks INTEGER NOT NULL,
+        percentage REAL NOT NULL,
+        submitted_at TEXT NOT NULL
+    );
+    """)
+
+    # 12. Schedules table
+    cursor.execute(f"""
+    CREATE TABLE IF NOT EXISTS schedules (
+        id {id_primary_key},
+        title TEXT NOT NULL,
+        instructor TEXT NOT NULL,
+        date TEXT NOT NULL,
+        time TEXT NOT NULL,
+        duration TEXT DEFAULT '1.5 hrs',
+        course_id TEXT,
+        status TEXT DEFAULT 'upcoming',
+        created_at TEXT NOT NULL
+    );
+    """)
+
+    # 13. Enrollment Keys table (Company / Teacher Key Generation)
+    cursor.execute(f"""
+    CREATE TABLE IF NOT EXISTS enrollment_keys (
+        id {id_primary_key},
+        key_code TEXT UNIQUE NOT NULL,
+        course_id TEXT NOT NULL REFERENCES courses(id),
+        batch_name TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        max_uses INTEGER DEFAULT 50,
+        current_uses INTEGER DEFAULT 0,
+        permissions_json TEXT DEFAULT '["live", "recordings", "materials", "tests", "exercises"]',
+        is_active INTEGER DEFAULT 1,
+        created_at TEXT NOT NULL
+    );
+    """)
+
+    # 14. Student Enrollments table (Verified Eligibility Binding)
+    cursor.execute(f"""
+    CREATE TABLE IF NOT EXISTS student_enrollments (
+        id {id_primary_key},
+        student_name TEXT NOT NULL,
+        student_email TEXT NOT NULL,
+        course_id TEXT NOT NULL,
+        batch_name TEXT,
+        key_code TEXT NOT NULL,
+        permissions_json TEXT DEFAULT '["live", "recordings", "materials", "tests", "exercises"]',
+        status TEXT DEFAULT 'active',
+        enrolled_at TEXT NOT NULL
+    );
+    """)
+
+    # Automated migration for existing student_enrollments schema
+    try:
+        cursor.execute("ALTER TABLE student_enrollments ADD COLUMN batch_name TEXT;")
+    except Exception:
+        pass
+    try:
+        cursor.execute("ALTER TABLE student_enrollments ADD COLUMN permissions_json TEXT;")
+    except Exception:
+        pass
 
     conn.commit()
     seed_data(conn)
@@ -350,11 +422,8 @@ def seed_data(conn):
     cursor.execute("SELECT COUNT(*) FROM sessions")
     row = cursor.fetchone()
     if row and row[0] > 0:
-        cursor.execute("SELECT COUNT(*) FROM users")
-        user_row = cursor.fetchone()
-        if user_row and user_row[0] == 0:
-            seed_additional_tables(cursor)
-            conn.commit()
+        seed_additional_tables(cursor)
+        conn.commit()
         return
 
     now = datetime.now()
@@ -413,49 +482,57 @@ def seed_data(conn):
 def seed_additional_tables(cursor):
     now_iso = datetime.now().isoformat()
 
-    users = [
-        ("teacher@eduvault.io", "password123", "Prof. Rajesh Sharma", "teacher", "Indian Institute of Technology", now_iso),
-        ("student@eduvault.io", "password123", "Abhishek Dwivedi (Student)", "student", "Stanford CS Dept", now_iso),
-        ("admin@eduvault.io", "password123", "Abhishek Dwivedi (CEO)", "teacher", "EduVault Technologies Inc.", now_iso)
-    ]
-    cursor.executemany("""
-    INSERT INTO users (email, password, full_name, role, organization, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-    """, users)
+    cursor.execute("SELECT COUNT(*) FROM users")
+    if cursor.fetchone()[0] == 0:
+        users = [
+            ("teacher@eduvault.io", "password123", "Prof. Rajesh Sharma", "teacher", "Indian Institute of Technology", now_iso),
+            ("student@eduvault.io", "password123", "Abhishek Dwivedi (Student)", "student", "Stanford CS Dept", now_iso),
+            ("admin@eduvault.io", "password123", "Abhishek Dwivedi (CEO)", "teacher", "EduVault Technologies Inc.", now_iso)
+        ]
+        cursor.executemany("""
+        INSERT INTO users (email, password, full_name, role, organization, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """, users)
 
-    courses = [
-        ("course-dsa", "Advanced Data Structures & Algorithms", "Prof. Rajesh Sharma", "Computer Science", 24, 1850, 4.95, 1, "linear-gradient(135deg, #6366F1, #8B5CF6)"),
-        ("course-ml", "Deep Learning & Neural Architectures", "Prof. Rajesh Sharma", "Artificial Intelligence", 18, 1420, 4.90, 1, "linear-gradient(135deg, #8B5CF6, #06B6D4)"),
-        ("course-web", "Full-Stack Web Systems & High Concurrency", "Prof. Rajesh Sharma", "Engineering", 32, 2190, 4.88, 1, "linear-gradient(135deg, #06B6D4, #10B981)"),
-        ("course-sec", "Cybersecurity & DRM Cryptographic Vaults", "Prof. Rajesh Sharma", "Security", 14, 980, 4.98, 1, "linear-gradient(135deg, #F43F5E, #FB923C)")
-    ]
-    cursor.executemany("""
-    INSERT INTO courses (id, title, instructor, category, lessons_count, enrolled_count, rating, drm_protected, banner_gradient)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, courses)
+    cursor.execute("SELECT COUNT(*) FROM courses")
+    if cursor.fetchone()[0] == 0:
+        courses = [
+            ("course-dsa", "Advanced Data Structures & Algorithms", "Prof. Rajesh Sharma", "Computer Science", 24, 1850, 4.95, 1, "linear-gradient(135deg, #6366F1, #8B5CF6)"),
+            ("course-ml", "Deep Learning & Neural Architectures", "Prof. Rajesh Sharma", "Artificial Intelligence", 18, 1420, 4.90, 1, "linear-gradient(135deg, #8B5CF6, #06B6D4)"),
+            ("course-web", "Full-Stack Web Systems & High Concurrency", "Prof. Rajesh Sharma", "Engineering", 32, 2190, 4.88, 1, "linear-gradient(135deg, #06B6D4, #10B981)"),
+            ("course-sec", "Cybersecurity & DRM Cryptographic Vaults", "Prof. Rajesh Sharma", "Security", 14, 980, 4.98, 1, "linear-gradient(135deg, #F43F5E, #FB923C)")
+        ]
+        cursor.executemany("""
+        INSERT INTO courses (id, title, instructor, category, lessons_count, enrolled_count, rating, drm_protected, banner_gradient)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, courses)
 
-    leaderboard = [
-        ("Abhishek Dwivedi", 2850, 1, 14, "Grandmaster", "AD"),
-        ("Alice Johnson", 2720, 2, 11, "Algorithm Master", "AJ"),
-        ("Bob Smith", 2490, 3, 9, "Problem Solver", "BS"),
-        ("Eve Rodriguez", 2340, 4, 8, "Code Ninja", "ER"),
-        ("David Lee", 2180, 5, 6, "Rising Star", "DL"),
-        ("Sophia Patel", 2050, 6, 7, "Consistent Learner", "SP")
-    ]
-    cursor.executemany("""
-    INSERT INTO leaderboard (student_name, points, rank, streak_days, badge_name, avatar_initials)
-    VALUES (?, ?, ?, ?, ?, ?)
-    """, leaderboard)
+    cursor.execute("SELECT COUNT(*) FROM leaderboard")
+    if cursor.fetchone()[0] == 0:
+        leaderboard = [
+            ("Abhishek Dwivedi", 2850, 1, 14, "Grandmaster", "AD"),
+            ("Alice Johnson", 2720, 2, 11, "Algorithm Master", "AJ"),
+            ("Bob Smith", 2490, 3, 9, "Problem Solver", "BS"),
+            ("Eve Rodriguez", 2340, 4, 8, "Code Ninja", "ER"),
+            ("David Lee", 2180, 5, 6, "Rising Star", "DL"),
+            ("Sophia Patel", 2050, 6, 7, "Consistent Learner", "SP")
+        ]
+        cursor.executemany("""
+        INSERT INTO leaderboard (student_name, points, rank, streak_days, badge_name, avatar_initials)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """, leaderboard)
 
-    assessments = [
-        ("quiz-trees", "Binary Trees & BST Mastery Quiz", "Data Structures", 30, 50, 10, "Intermediate"),
-        ("exam-midterm", "Midterm Examination — CS301", "Algorithms", 90, 100, 25, "Advanced"),
-        ("hackathon-algo", "Speed Algorithm Challenge 2026", "Competitive Coding", 60, 150, 3, "Hard")
-    ]
-    cursor.executemany("""
-    INSERT INTO assessments (id, title, subject, duration_mins, total_marks, questions_count, difficulty)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, assessments)
+    cursor.execute("SELECT COUNT(*) FROM assessments")
+    if cursor.fetchone()[0] == 0:
+        assessments = [
+            ("quiz-trees", "Binary Trees & BST Mastery Quiz", "Data Structures", 30, 50, 10, "Intermediate"),
+            ("exam-midterm", "Midterm Examination — CS301", "Algorithms", 90, 100, 25, "Advanced"),
+            ("hackathon-algo", "Speed Algorithm Challenge 2026", "Competitive Coding", 60, 150, 3, "Hard")
+        ]
+        cursor.executemany("""
+        INSERT INTO assessments (id, title, subject, duration_mins, total_marks, questions_count, difficulty)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, assessments)
 
     cursor.execute("SELECT COUNT(*) FROM schedules")
     sched_count = cursor.fetchone()[0]
@@ -469,4 +546,19 @@ def seed_additional_tables(cursor):
         INSERT INTO schedules (title, instructor, date, time, duration, course_id, status, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, schedules)
+
+    cursor.execute("SELECT COUNT(*) FROM enrollment_keys")
+    keys_count = cursor.fetchone()[0]
+    if keys_count == 0:
+        enrollment_keys = [
+            ("EDU-DSA-2026-ALPHA", "course-dsa", "DSA Autumn 2026 Honors Batch", "Prof. Rajesh Sharma", 50, 12, '["live", "recordings", "materials", "tests", "exercises"]', 1, now_iso),
+            ("EDU-ML-NEURAL-PRO", "course-ml", "AI / Deep Learning Specialization", "Prof. Rajesh Sharma", 50, 8, '["live", "recordings", "materials", "tests", "exercises"]', 1, now_iso),
+            ("EDU-FULLSTACK-WEB", "course-web", "Full-Stack Web Engineering Fellowship", "Prof. Rajesh Sharma", 100, 24, '["live", "recordings", "materials", "tests", "exercises"]', 1, now_iso),
+            ("EDU-CYBER-SEC-VAULT", "course-sec", "Cybersecurity & DRM Cryptographic Vaults", "Prof. Rajesh Sharma", 30, 5, '["live", "recordings", "materials", "tests", "exercises"]', 1, now_iso)
+        ]
+        cursor.executemany("""
+        INSERT INTO enrollment_keys (key_code, course_id, batch_name, created_by, max_uses, current_uses, permissions_json, is_active, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, enrollment_keys)
+
 
