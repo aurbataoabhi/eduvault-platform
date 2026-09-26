@@ -716,6 +716,34 @@ def get_session(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
     return dict(row)
 
+@app.post("/api/sessions/{session_id}/start")
+def start_session(session_id: str):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE sessions SET status = 'live' WHERE id = ?", (session_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "live", "session_id": session_id}
+
+@app.post("/api/sessions/{session_id}/end")
+async def end_session(session_id: str):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE sessions SET status = 'ended' WHERE id = ?", (session_id,))
+    conn.commit()
+    conn.close()
+    # Broadcast to WebRTC room that teacher has ended the class
+    try:
+        await webrtc_manager.broadcast(session_id, {
+            "type": "teacher_action",
+            "action": "end_class",
+            "message": "The teacher has ended this live classroom session."
+        })
+    except Exception:
+        pass
+    return {"status": "ended", "session_id": session_id}
+
+
 # --- Chat Messages ---
 @app.get("/api/sessions/{session_id}/chat")
 def get_chat_history(session_id: str, search: Optional[str] = None, missed_only: bool = False):

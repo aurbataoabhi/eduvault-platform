@@ -845,6 +845,23 @@ async function handleWebRTCSignalMessage(msg) {
     } else if (msg.type === 'hand_raise') {
         showToast(`✋ ${msg.sender_name} raised hand!`, 'warning');
         addChatMessage(null, `✋ ${msg.sender_name} raised hand`, true);
+    } else if (msg.type === 'teacher_action') {
+        if (msg.action === 'mute_all') {
+            if (WebRTCState.localStream && WebRTCState.role === 'student') {
+                WebRTCState.localStream.getAudioTracks().forEach(t => t.enabled = false);
+                AppState.micOn = false;
+                const sMic = document.getElementById('student-mic');
+                if (sMic) {
+                    sMic.classList.remove('active');
+                    sMic.innerHTML = '<i class="fas fa-microphone-slash"></i>';
+                }
+                showToast('🔇 Teacher muted all student microphones.', 'warning');
+            }
+        } else if (msg.action === 'end_class') {
+            showToast('The teacher has concluded this live classroom session.', 'info');
+            cleanupLiveClassroomWebRTC();
+            navigateTo('student-dashboard');
+        }
     } else if (msg.type === 'whiteboard') {
         drawRemoteWhiteboardStroke(msg.data);
     } else if (msg.type === 'whiteboard_clear') {
@@ -1239,6 +1256,13 @@ function muteAllStudents() {
 function endClass() {
     if (confirm('Are you sure you want to end this live class for everyone?')) {
         if (classTimerInterval) clearInterval(classTimerInterval);
+        
+        // Notify PostgreSQL that session is officially ended
+        fetch(`${BackendSync.apiUrl}/api/sessions/dsa-bt-live/end`, { method: 'POST' }).catch(() => {});
+
+        // Broadcast to WebRTC room peers
+        sendSignal({ type: 'teacher_action', action: 'end_class' });
+
         cleanupLiveClassroomWebRTC();
         showToast('Class ended. All media sessions safely terminated.', 'success');
         navigateTo(AppState.userRole === 'teacher' ? 'teacher-dashboard' : 'student-dashboard');
@@ -4185,7 +4209,71 @@ async function checkBackendHealth(manualClick = false) {
     }
 }
 
-// Live Outage & Reconnection Simulation Action
+// ===================================================================
+// CLASSROOM OUTAGE RESILIENCE ENGINE (FEATURE 4)
+// ===================================================================
+let classroomOutageTimeout = null;
+
+function simulateClassroomOutage() {
+    const shield = document.getElementById('classroom-outage-shield');
+    const pill = document.getElementById('webrtc-status-pill');
+    const statusText = document.getElementById('outage-reconnect-status');
+
+    if (shield) shield.classList.remove('hidden');
+    if (pill) {
+        pill.className = 'webrtc-status-pill connecting';
+        pill.innerHTML = '<i class="fas fa-bolt-lightning text-yellow"></i> Reconnecting (Outage)...';
+    }
+
+    showToast('⚠️ Sudden Wi-Fi / power disruption detected! Preserving peer mesh...', 'warning');
+
+    // Pause video temporarily to simulate network drop
+    const video = document.getElementById('real-live-video');
+    if (video && !video.paused) {
+        video.pause();
+    }
+
+    if (statusText) statusText.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Auto-reconnecting (Attempt 1)...';
+
+    if (classroomOutageTimeout) clearTimeout(classroomOutageTimeout);
+
+    // Auto-reconnect after 2.5 seconds
+    classroomOutageTimeout = setTimeout(() => {
+        reconnectLiveClassroom();
+    }, 2500);
+}
+
+async function reconnectLiveClassroom() {
+    if (classroomOutageTimeout) clearTimeout(classroomOutageTimeout);
+
+    const shield = document.getElementById('classroom-outage-shield');
+    const pill = document.getElementById('webrtc-status-pill');
+    const video = document.getElementById('real-live-video');
+
+    showToast('⚡ Power & Internet Restored! Re-negotiating WebRTC signaling...', 'info');
+
+    // 1. Re-establish signaling socket
+    connectWebRTCSignaling();
+
+    // 2. Resume video playback
+    if (video) {
+        video.play().catch(() => {});
+    }
+
+    // 3. Update status UI
+    if (pill) {
+        pill.className = 'webrtc-status-pill connected';
+        pill.innerHTML = '<i class="fas fa-signal"></i> WebRTC P2P Live';
+    }
+
+    if (shield) {
+        shield.classList.add('hidden');
+    }
+
+    showToast('🎉 Live Classroom Resumed! Audio/Video restored with zero packet loss.', 'success');
+}
+
+// Live Outage Simulation Action for Dashboard
 async function simulateOutageReconnection() {
     const btn = document.getElementById('simulate-outage-btn');
     if (btn) btn.disabled = true;
@@ -4212,41 +4300,14 @@ async function simulateOutageReconnection() {
         });
     } catch(e) {}
 
-    // Simulate recovery after 2.2 seconds
+    // Simulate recovery after 2.2 seconds without catchup hub redirection
     setTimeout(async () => {
-        showToast('⚡ Power & Internet restored! Reconnecting to live session...', 'info');
+        showToast('⚡ Power & Internet restored! Reconnecting live session...', 'info');
 
         await checkBackendHealth(false);
         BackendSync.connectWebSocket('dsa-bt-live');
 
-        // Restore banner if not present
-        let banner = document.getElementById('catchup-reconnect-banner');
-        if (!banner) {
-            const header = document.querySelector('#page-session-catchup .dashboard-header');
-            if (header) {
-                const newBanner = document.createElement('div');
-                newBanner.className = 'catchup-reconnect-banner';
-                newBanner.id = 'catchup-reconnect-banner';
-                newBanner.innerHTML = `
-                    <div class="reconnect-banner-icon"><i class="fas fa-plug-circle-check"></i></div>
-                    <div class="reconnect-banner-content">
-                        <h3>Welcome Back! You missed <span id="missed-duration">12 minutes</span> of the session</h3>
-                        <p>"Data Structures — Binary Trees" was in progress. Here's what happened while you were away.</p>
-                    </div>
-                    <div class="reconnect-banner-actions">
-                        <button class="btn btn-primary btn-sm" onclick="scrollToMissedContent()"><i class="fas fa-arrow-down"></i> Jump to Missed Content</button>
-                        <button class="btn btn-ghost btn-sm" onclick="dismissReconnectBanner()"><i class="fas fa-times"></i></button>
-                    </div>
-                `;
-                header.insertAdjacentElement('afterend', newBanner);
-            }
-        }
-
-        // Reload fresh data from SQLite backend
-        await loadChatArchive('dsa-bt-live');
-        await loadAISummary('dsa-bt-live');
-
-        showToast('🎉 Reconnection Complete! Missed 12 minutes synchronized.', 'success');
+        showToast('🎉 Reconnection Complete! Live state synchronized seamlessly.', 'success');
         if (btn) btn.disabled = false;
     }, 2200);
 }

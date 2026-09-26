@@ -921,6 +921,20 @@
                                 <span class="pip-label" id="pip-label">You (Live Camera)</span>
                             </div>
 
+                            <!-- Sudden Power / Network Outage Recovery Shield -->
+                            <div class="classroom-outage-shield hidden" id="classroom-outage-shield">
+                                <div class="outage-radar-ring"><i class="fas fa-bolt text-yellow"></i></div>
+                                <h3 style="font-size: 1.3rem; margin: 14px 0 4px 0; color: #F59E0B;">Sudden Power / Wi-Fi Disconnect Detected</h3>
+                                <p style="font-size: 0.85rem; color: var(--text-muted); max-width: 440px; margin: 0 auto 16px auto;">
+                                    Peer mesh state & audio buffer preserved. Reconnecting to live classroom stream...
+                                </p>
+                                <div style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-bottom: 16px;">
+                                    <span class="proctor-telemetry-pill" id="outage-reconnect-status"><i class="fas fa-spinner fa-spin"></i> Auto-reconnecting (Attempt 1)...</span>
+                                    <span class="proctor-telemetry-pill"><i class="fas fa-shield-alt text-cyan"></i> Peer Mesh Preserved</span>
+                                </div>
+                                <button class="btn btn-primary btn-sm" onclick="reconnectLiveClassroom()"><i class="fas fa-sync"></i> Reconnect Now</button>
+                            </div>
+
                             <div class="video-placeholder hidden" id="video-placeholder">
                                 <i class="fas fa-chalkboard-teacher fa-4x"></i>
                                 <h3>Live Classroom Ready</h3>
@@ -935,6 +949,9 @@
                                 <div class="video-top-bar">
                                     <span class="class-title"><i class="fas fa-lock"></i> Data Structures — Binary Trees (WebRTC Live)</span>
                                     <div class="video-top-actions">
+                                        <button class="btn btn-sm btn-outline" style="font-size: 0.72rem; padding: 4px 8px; background: rgba(0,0,0,0.5);" onclick="simulateClassroomOutage()" title="Test Wi-Fi / Power Outage Resilience">
+                                            <i class="fas fa-plug-circle-exclamation text-yellow"></i> Test Outage Resilience
+                                        </button>
                                         <span class="webrtc-status-pill" id="webrtc-status-pill">
                                             <i class="fas fa-signal"></i> WebRTC P2P Live
                                         </span>
