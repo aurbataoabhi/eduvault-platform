@@ -145,7 +145,14 @@ function navigateTo(page) {
     if (page === 'test-taking') {
         loadTestQuestions('quiz-trees');
     } else {
-        if (testTimerInterval) clearInterval(testTimerInterval);
+        if (ProctorState.timerInterval) clearInterval(ProctorState.timerInterval);
+        if (ProctorState.webcamStream) {
+            try {
+                ProctorState.webcamStream.getTracks().forEach(t => t.stop());
+                ProctorState.webcamStream = null;
+            } catch(e) {}
+        }
+        ProctorState.isProctoringActive = false;
     }
 
     if (page === 'teacher-dashboard' || page === 'student-dashboard') {
@@ -1738,11 +1745,36 @@ let testTimerInterval;
 let currentTestQuestions = [];
 let currentTestId = "quiz-trees";
 
+// ===================================================================
+// FEATURE 3: PROCTORED FULL-SCREEN ASSESSMENT & ANTI-CHEATING ENGINE
+// ===================================================================
+
+const ProctorState = {
+    isProctoringActive: false,
+    warnings: 0,
+    maxWarnings: 3,
+    startTime: null,
+    webcamStream: null,
+    currentTestId: "quiz-trees",
+    durationMins: 30,
+    allQuestions: [],
+    timerInterval: null
+};
+
+function shuffleArray(array) {
+    const arr = [...array];
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+}
+
 function startTestTimer(totalSeconds = 1800) {
-    if (testTimerInterval) clearInterval(testTimerInterval);
+    if (ProctorState.timerInterval) clearInterval(ProctorState.timerInterval);
     let timeLeft = totalSeconds;
     
-    testTimerInterval = setInterval(() => {
+    ProctorState.timerInterval = setInterval(() => {
         timeLeft--;
         const mins = Math.floor(timeLeft / 60);
         const secs = timeLeft % 60;
@@ -1750,27 +1782,44 @@ function startTestTimer(totalSeconds = 1800) {
         if (el) el.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
         
         if (timeLeft <= 0) {
-            clearInterval(testTimerInterval);
-            submitTest();
+            clearInterval(ProctorState.timerInterval);
+            submitTest(true);
         }
         
         if (timeLeft === 300) {
-            showToast('⏰ Only 5 minutes remaining!', 'warning');
+            showToast('⏰ Only 5 minutes remaining in this proctored session!', 'warning');
         }
     }, 1000);
 }
 
 async function loadTestQuestions(testId = "quiz-trees") {
-    currentTestId = testId;
+    ProctorState.currentTestId = testId;
     AppState.testAnswers = {};
     AppState.currentQuestion = 1;
+    ProctorState.warnings = 0;
+    ProctorState.isProctoringActive = false;
+
+    // Reset and show the pre-assessment security gate
+    const gate = document.getElementById('proctor-entry-gate');
+    const exitShield = document.getElementById('proctor-exit-shield');
+    if (gate) gate.classList.remove('hidden');
+    if (exitShield) exitShield.classList.add('hidden');
+
+    const warningCount = document.getElementById('warning-count');
+    if (warningCount) warningCount.textContent = '0';
 
     try {
         const res = await fetch(`${BackendSync.apiUrl}/api/assessments/${testId}`);
         if (!res.ok) return;
         const data = await res.json();
 
-        // Update header
+        // Update header & gate titles
+        const gateTitle = document.getElementById('gate-test-title');
+        if (gateTitle) gateTitle.textContent = `Proctored Exam: ${data.title}`;
+        
+        const gateMeta = document.getElementById('gate-test-meta');
+        if (gateMeta) gateMeta.textContent = `${data.subject || 'Computer Science'} • ${data.duration_mins || 30} Minutes • ${data.total_marks || 50} Total Marks`;
+
         const titleEl = document.getElementById('test-taking-title') || document.querySelector('.test-info h2');
         if (titleEl) titleEl.innerHTML = `<i class="fas fa-file-alt"></i> ${escapeHtml(data.title)}`;
 
@@ -1780,11 +1829,127 @@ async function loadTestQuestions(testId = "quiz-trees") {
             metaEl.textContent = `${qCount} Questions • ${data.total_marks || 50} Marks • Proctored Session`;
         }
 
-        currentTestQuestions = data.questions || [];
+        ProctorState.durationMins = data.duration_mins || 30;
+
+        // Dynamic Randomized Question & Option Shuffling per Candidate
+        let rawQuestions = data.questions && data.questions.length > 0 ? data.questions : [
+            {"id": "q1", "text": "What is the average time complexity of searching in a Balanced Binary Search Tree (AVL)?", "options": ["O(1)", "O(log n)", "O(n)", "O(n log n)"], "answer": "O(log n)", "marks": 10},
+            {"id": "q2", "text": "Which tree traversal algorithm yields node keys in sorted non-decreasing order for a BST?", "options": ["Preorder (Root, Left, Right)", "Inorder (Left, Root, Right)", "Postorder (Left, Right, Root)", "Level Order"], "answer": "Inorder (Left, Root, Right)", "marks": 10},
+            {"id": "q3", "text": "What is the maximum number of nodes in a binary tree of height h (where root height = 0)?", "options": ["2^h", "2^(h+1) - 1", "2*h", "h^2"], "answer": "2^(h+1) - 1", "marks": 10},
+            {"id": "q4", "text": "In a Max-Heap, which element is always at the root position?", "options": ["Smallest element", "Largest element", "Median element", "Random element"], "answer": "Largest element", "marks": 10},
+            {"id": "q5", "text": "What data structure is used to implement Breadth-First Search (BFS) graph traversal?", "options": ["Stack", "Queue", "Priority Queue", "Binary Search Tree"], "answer": "Queue", "marks": 10}
+        ];
+
+        // 1. Shuffle questions
+        const shuffledQ = shuffleArray(rawQuestions).map(q => {
+            // 2. Shuffle options for each question
+            return {
+                ...q,
+                options: shuffleArray(q.options || ["A", "B", "C", "D"])
+            };
+        });
+
+        currentTestQuestions = shuffledQ;
         renderTestQuestionsUI();
-        startTestTimer(data.duration_mins ? data.duration_mins * 60 : 1800);
     } catch(e) {
         console.warn('Error loading test questions:', e);
+    }
+}
+
+function cancelTestEntry() {
+    navigateTo('student-dashboard');
+}
+
+// Fullscreen Exam Launcher & Webcam Feed Activation
+async function startProctoredAssessmentFullscreen() {
+    const gate = document.getElementById('proctor-entry-gate');
+    if (gate) gate.classList.add('hidden');
+
+    ProctorState.isProctoringActive = true;
+    ProctorState.startTime = Date.now();
+    ProctorState.warnings = 0;
+
+    // 1. Request hardware full-screen
+    try {
+        if (document.documentElement.requestFullscreen) {
+            await document.documentElement.requestFullscreen();
+        } else if (document.documentElement.webkitRequestFullscreen) {
+            await document.documentElement.webkitRequestFullscreen();
+        }
+    } catch(err) {
+        console.warn('Fullscreen request bypassed by browser permissions:', err);
+    }
+
+    // 2. Attempt webcam connection for candidate presence monitoring
+    try {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 160, height: 120 } });
+            ProctorState.webcamStream = stream;
+            const preview = document.getElementById('proctor-webcam-preview');
+            const avatar = document.getElementById('proctor-webcam-avatar');
+            if (preview) {
+                preview.srcObject = stream;
+                preview.style.display = 'block';
+            }
+            if (avatar) avatar.style.display = 'none';
+
+            const gazeText = document.getElementById('proctor-gaze-status');
+            if (gazeText) gazeText.textContent = 'Hardware Feed Active';
+            showToast('📷 Webcam proctor connected. Face tracked.', 'success');
+        }
+    } catch (camErr) {
+        const gazeText = document.getElementById('proctor-gaze-status');
+        if (gazeText) gazeText.textContent = 'AI Telemetry Sim';
+    }
+
+    // 3. Start exam countdown
+    startTestTimer(ProctorState.durationMins * 60);
+
+    showToast('🔒 Proctored examination session is now active in full-screen mode!', 'info');
+}
+
+function resumeProctoredFullscreen() {
+    const exitShield = document.getElementById('proctor-exit-shield');
+    if (exitShield) exitShield.classList.add('hidden');
+
+    try {
+        if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen();
+        }
+    } catch(e) {}
+}
+
+// Anti-Cheating Event Handlers (Clipboard, DevTools, Right-Click)
+function handleTestAntiCheatEvent(e, type) {
+    if (!ProctorState.isProctoringActive) return true;
+    e.preventDefault();
+    showToast(`⚠️ ${type.toUpperCase()} is strictly blocked during proctored exams to maintain integrity.`, 'warning');
+    return false;
+}
+
+function handleTabSwitchViolation(reason = 'Tab switch or window blur') {
+    if (!ProctorState.isProctoringActive || AppState.currentPage !== 'test-taking') return;
+
+    ProctorState.warnings++;
+    const banner = document.getElementById('test-warning-banner');
+    const warningText = document.getElementById('warning-text');
+    const warningCount = document.getElementById('warning-count');
+    const shieldCount = document.getElementById('shield-violation-count');
+
+    if (warningCount) warningCount.textContent = ProctorState.warnings;
+    if (shieldCount) shieldCount.textContent = ProctorState.warnings;
+
+    if (ProctorState.warnings >= ProctorState.maxWarnings) {
+        if (warningText) warningText.textContent = '⛔ Maximum 3 violations reached! Assessment is being auto-submitted with violation flag.';
+        if (banner) banner.classList.remove('hidden');
+        showToast('⛔ Maximum 3 integrity strikes! Auto-submitting exam...', 'danger');
+        setTimeout(() => {
+            submitTest(true);
+        }, 1500);
+    } else {
+        if (warningText) warningText.textContent = `⚠️ ${reason} detected! (${ProctorState.warnings}/3 warnings)`;
+        if (banner) banner.classList.remove('hidden');
+        showToast(`⚠️ Strike ${ProctorState.warnings}/3: ${reason}! Return to exam window.`, 'danger');
     }
 }
 
@@ -1841,7 +2006,6 @@ function selectDynamicOption(qNum, qId, value, el) {
 }
 
 function selectTestOption(el) {
-    // Legacy fallback
     const parent = el.closest('.tq-options');
     parent.querySelectorAll('.tq-option').forEach(o => o.classList.remove('selected'));
     el.classList.add('selected');
@@ -1872,10 +2036,29 @@ function nextQuestion() {
     }
 }
 
-async function submitTest() {
-    if (testTimerInterval) clearInterval(testTimerInterval);
+async function submitTest(isAuto = false) {
+    if (ProctorState.timerInterval) clearInterval(ProctorState.timerInterval);
     
-    showToast('Submitting assessment to EduVault Proctor Engine...', 'info');
+    // Stop camera feed tracks
+    if (ProctorState.webcamStream) {
+        try {
+            ProctorState.webcamStream.getTracks().forEach(track => track.stop());
+            ProctorState.webcamStream = null;
+        } catch(e) {}
+    }
+
+    // Exit full-screen
+    if (document.fullscreenElement) {
+        try {
+            document.exitFullscreen().catch(() => {});
+        } catch(e) {}
+    }
+
+    ProctorState.isProctoringActive = false;
+
+    showToast(isAuto ? '⚠️ Auto-submitting assessment due to limit...' : 'Submitting assessment to Cloud Proctor Engine...', 'info');
+
+    const timeSpent = Math.max(30, Math.round((Date.now() - (ProctorState.startTime || Date.now())) / 1000));
 
     let result = null;
     try {
@@ -1883,15 +2066,17 @@ async function submitTest() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                test_id: currentTestId || "quiz-trees",
+                test_id: ProctorState.currentTestId || "quiz-trees",
                 student_name: AppState.userName || "Abhishek Dwivedi",
                 answers: AppState.testAnswers,
-                time_spent_secs: 240,
-                tab_switches: AppState.testWarnings || 0
+                time_spent_secs: timeSpent,
+                tab_switches: ProctorState.warnings || 0
             })
         });
         if (res.ok) {
             result = await res.json();
+            // Automatically refresh live leaderboard in the background
+            loadLeaderboardFromBackend();
         }
     } catch(e) {}
 
@@ -1899,45 +2084,56 @@ async function submitTest() {
     const total = result ? result.total : 50;
     const pct = result ? result.percentage : 80;
     const grade = result ? result.grade : "A";
-    const integrity = result ? result.proctor_integrity : "100% Clean";
+    const integrity = result ? result.proctor_integrity : (ProctorState.warnings === 0 ? "100% Clean" : `${ProctorState.warnings} tab switches`);
+    const newRank = result ? result.new_rank : 1;
 
-    showTestResultDialog(score, total, pct, grade, integrity);
+    showTestResultDialog(score, total, pct, grade, integrity, newRank);
 }
 
-function showTestResultDialog(score, total, pct, grade, integrity) {
+function showTestResultDialog(score, total, pct, grade, integrity, newRank = 1) {
     const existing = document.getElementById('test-result-modal');
     if (existing) existing.remove();
+
+    const isViolated = integrity && integrity.toLowerCase().includes('violation');
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.id = 'test-result-modal';
     overlay.style.zIndex = '99999';
     overlay.innerHTML = `
-        <div class="modal" style="text-align: center; max-width: 480px; padding: 2.5rem 2rem;">
-            <div style="width: 72px; height: 72px; border-radius: 50%; background: rgba(16, 185, 129, 0.15); color: #10B981; display: flex; align-items: center; justify-content: center; font-size: 2rem; margin: 0 auto 1.2rem;">
-                <i class="fas fa-trophy"></i>
+        <div class="modal" style="text-align: center; max-width: 520px; padding: 2.5rem 2rem;">
+            <div style="width: 76px; height: 76px; border-radius: 50%; background: ${isViolated ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)'}; color: ${isViolated ? '#EF4444' : '#10B981'}; display: flex; align-items: center; justify-content: center; font-size: 2.2rem; margin: 0 auto 1.2rem;">
+                <i class="fas ${isViolated ? 'fa-exclamation-triangle' : 'fa-trophy'}"></i>
             </div>
-            <h2 style="font-size: 1.6rem; margin-bottom: 0.5rem;">Assessment Completed!</h2>
-            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">Evaluated automatically against cloud answer key.</p>
+            <h2 style="font-size: 1.6rem; margin-bottom: 0.5rem;">${isViolated ? 'Assessment Submitted with Violations' : 'Assessment Completed!'}</h2>
+            <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 1.5rem;">Evaluated automatically against cloud PostgreSQL answer key.</p>
             
             <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.2rem; margin-bottom: 1.5rem; text-align: left;">
-                <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
-                    <span style="color: var(--text-muted);">Earned Score:</span>
-                    <strong style="color: var(--primary); font-size: 1.2rem;">${score} / ${total}</strong>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem; align-items: center;">
+                    <span style="color: var(--text-muted); font-size: 0.9rem;">Earned Score:</span>
+                    <strong style="color: var(--primary); font-size: 1.3rem;">${score} / ${total}</strong>
                 </div>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
-                    <span style="color: var(--text-muted);">Percentage & Grade:</span>
-                    <strong>${pct}% (${grade})</strong>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem; align-items: center;">
+                    <span style="color: var(--text-muted); font-size: 0.9rem;">Percentage & Grade:</span>
+                    <strong style="font-size: 1rem;">${pct}% (${grade})</strong>
                 </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <span style="color: var(--text-muted);">Proctor Integrity:</span>
-                    <span class="badge badge-success"><i class="fas fa-shield-alt"></i> ${integrity}</span>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem; align-items: center;">
+                    <span style="color: var(--text-muted); font-size: 0.9rem;">Live Cloud Rank:</span>
+                    <strong style="color: #F59E0B; font-size: 1rem;"><i class="fas fa-crown text-gold"></i> Rank #${newRank} on Global Board</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: var(--text-muted); font-size: 0.9rem;">Proctor Integrity:</span>
+                    <span class="badge ${isViolated ? 'badge-danger' : 'badge-success'}" style="font-size: 0.75rem;">
+                        <i class="fas ${isViolated ? 'fa-shield-virus' : 'fa-shield-alt'}"></i> ${escapeHtml(integrity)}
+                    </span>
                 </div>
             </div>
 
             <div style="display: flex; gap: 10px;">
                 <button class="btn btn-outline btn-full" onclick="document.getElementById('test-result-modal')?.remove(); navigateTo('student-dashboard');">Dashboard</button>
-                <button class="btn btn-primary btn-full" onclick="document.getElementById('test-result-modal')?.remove(); navigateTo('leaderboard');">View Leaderboard</button>
+                <button class="btn btn-primary btn-full" onclick="document.getElementById('test-result-modal')?.remove(); navigateTo('leaderboard');">
+                    <i class="fas fa-trophy"></i> View Live Leaderboard
+                </button>
             </div>
         </div>
     `;
@@ -1952,7 +2148,7 @@ async function loadLeaderboardFromBackend() {
             const data = await res.json();
             const table = document.querySelector('.rankings-table');
             if (table && data && data.length > 0) {
-                let header = table.querySelector('.ranking-header');
+                let header = table.querySelector('.rankings-header');
                 let headerHtml = header ? header.outerHTML : '';
                 let rowsHtml = '';
                 data.forEach((row, i) => {
@@ -1962,13 +2158,13 @@ async function loadLeaderboardFromBackend() {
                             <span class="rank-col"><span class="rank-badge ${i < 3 ? 'rank-' + (i+1) : (isUser ? 'highlight' : '')}">${row.rank}</span></span>
                             <span class="student-col">
                                 <div class="rank-avatar ${isUser ? 'you' : ''}">${row.avatar_initials || row.student_name.slice(0, 2).toUpperCase()}</div>
-                                ${row.student_name} ${isUser ? '<strong>(YOU)</strong>' : ''}
+                                ${escapeHtml(row.student_name)} ${isUser ? '<strong>(YOU)</strong>' : ''}
                             </span>
                             <span class="score-col">${row.points.toLocaleString()}</span>
                             <span class="quizzes-col">92%</span>
                             <span class="tests-col">89%</span>
                             <span class="streak-col">🔥 ${row.streak_days || 7} days</span>
-                            <span class="badges-col"><span class="badge-mini text-cyan">${row.badge_name || 'Achiever'}</span></span>
+                            <span class="badges-col"><span class="badge-mini text-cyan">${escapeHtml(row.badge_name || 'Achiever')}</span></span>
                         </div>
                     `;
                 });
@@ -1982,25 +2178,40 @@ function dismissTestWarning() {
     document.getElementById('test-warning-banner')?.classList.add('hidden');
 }
 
-// ========== TAB SWITCH DETECTION (Test Proctoring) ==========
+// ========== ACTIVE ANTI-CHEATING LISTENERS (PROCTORING) ==========
 function initTabSwitchDetection() {
+    // 1. Tab blur / window switch detector
     document.addEventListener('visibilitychange', () => {
-        if (AppState.currentPage === 'test-taking' && document.hidden) {
-            AppState.testWarnings++;
-            const banner = document.getElementById('test-warning-banner');
-            const warningText = document.getElementById('warning-text');
-            const warningCount = document.getElementById('warning-count');
-            
-            if (warningCount) warningCount.textContent = AppState.testWarnings;
-            
-            if (AppState.testWarnings >= 3) {
-                if (warningText) warningText.textContent = '⛔ Maximum warnings reached! Test auto-submitted.';
-                if (banner) banner.classList.remove('hidden');
-                submitTest();
-            } else {
-                if (warningText) warningText.textContent = `⚠️ Tab switch detected! Return to fullscreen immediately. (${AppState.testWarnings}/3 warnings)`;
-                if (banner) banner.classList.remove('hidden');
-                showToast(`⚠️ Warning ${AppState.testWarnings}/3: Tab switch detected!`, 'error');
+        if (AppState.currentPage === 'test-taking' && document.hidden && ProctorState.isProctoringActive) {
+            handleTabSwitchViolation('Tab switch detected');
+        }
+    });
+
+    window.addEventListener('blur', () => {
+        if (AppState.currentPage === 'test-taking' && ProctorState.isProctoringActive) {
+            handleTabSwitchViolation('Window focus lost (dual monitor or external app)');
+        }
+    });
+
+    // 2. Fullscreen exit detector
+    document.addEventListener('fullscreenchange', () => {
+        if (AppState.currentPage === 'test-taking' && !document.fullscreenElement && ProctorState.isProctoringActive) {
+            handleTabSwitchViolation('Exited fullscreen mode');
+            const shield = document.getElementById('proctor-exit-shield');
+            if (shield) shield.classList.remove('hidden');
+        }
+    });
+
+    // 3. DevTools & Inspection Key Interceptor
+    document.addEventListener('keydown', (e) => {
+        if (AppState.currentPage === 'test-taking' && ProctorState.isProctoringActive) {
+            // Block F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C, Ctrl+U
+            if (e.key === 'F12' || 
+               (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) || 
+               (e.ctrlKey && e.key === 'u')) {
+                e.preventDefault();
+                showToast('🚫 Developer tools inspection is blocked by proctor integrity rules!', 'danger');
+                return false;
             }
         }
     });

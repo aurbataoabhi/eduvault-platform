@@ -570,13 +570,14 @@ def submit_assessment(sub: TestSubmissionRequest):
 
     percentage = round((earned_score / total_marks) * 100, 1)
     grade = "A+" if percentage >= 90 else ("A" if percentage >= 80 else ("B" if percentage >= 70 else "C"))
+    integrity = "100% Clean" if sub.tab_switches == 0 else f"Violation Flagged: {sub.tab_switches} tab switches"
 
-    # Record student submission in PostgreSQL
+    # Record student submission in PostgreSQL with proctor integrity audit
     now_iso = datetime.now().isoformat()
     cursor.execute("""
-        INSERT INTO student_submissions (assessment_id, student_name, score, total_marks, percentage, submitted_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (sub.test_id, sub.student_name, earned_score, total_marks, percentage, now_iso))
+        INSERT INTO student_submissions (assessment_id, student_name, score, total_marks, percentage, submitted_at, tab_switches, time_spent_secs, proctor_integrity)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (sub.test_id, sub.student_name, earned_score, total_marks, percentage, now_iso, sub.tab_switches, sub.time_spent_secs, integrity))
 
     # Update student points on Leaderboard
     cursor.execute("SELECT points FROM leaderboard WHERE student_name = ?", (sub.student_name,))
@@ -587,8 +588,22 @@ def submit_assessment(sub: TestSubmissionRequest):
     else:
         cursor.execute("""
             INSERT INTO leaderboard (student_name, points, rank, streak_days, badge_name, avatar_initials)
-            VALUES (?, ?, 7, 1, 'Quiz Master', ?)
+            VALUES (?, ?, 10, 1, 'Quiz Master', ?)
         """, (sub.student_name, earned_score, sub.student_name[:2].upper()))
+
+    # Recalculate leaderboard ranks dynamically
+    cursor.execute("SELECT id FROM leaderboard ORDER BY points DESC")
+    all_leaders = cursor.fetchall()
+    student_rank = 1
+    for r_idx, l_row in enumerate(all_leaders):
+        cur_id = l_row["id"]
+        cursor.execute("UPDATE leaderboard SET rank = ? WHERE id = ?", (r_idx + 1, cur_id))
+
+    cursor.execute("SELECT rank FROM leaderboard WHERE student_name = ?", (sub.student_name,))
+    rank_row = cursor.fetchone()
+    if rank_row:
+        student_rank = rank_row["rank"]
+
     conn.commit()
     conn.close()
 
@@ -602,8 +617,22 @@ def submit_assessment(sub: TestSubmissionRequest):
         "grade": grade,
         "correct_answers": correct_count,
         "points_awarded": earned_score,
-        "proctor_integrity": "100% Clean" if sub.tab_switches == 0 else f"{sub.tab_switches} tab switches recorded"
+        "new_rank": student_rank,
+        "proctor_integrity": integrity
     }
+
+@app.get("/api/assessments/{test_id}/submissions")
+def get_assessment_submissions(test_id: str):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM student_submissions 
+        WHERE assessment_id = ? 
+        ORDER BY score DESC, submitted_at DESC
+    """, (test_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 # --- Schedule Manager ---
 @app.get("/api/schedules")

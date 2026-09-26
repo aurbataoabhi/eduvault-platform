@@ -370,9 +370,27 @@ def init_db():
         score INTEGER NOT NULL,
         total_marks INTEGER NOT NULL,
         percentage REAL NOT NULL,
-        submitted_at TEXT NOT NULL
+        submitted_at TEXT NOT NULL,
+        tab_switches INTEGER DEFAULT 0,
+        time_spent_secs INTEGER DEFAULT 0,
+        proctor_integrity TEXT DEFAULT '100% Clean'
     );
     """)
+
+    # Migrations for student_submissions table
+    for col_sql in [
+        "ALTER TABLE student_submissions ADD COLUMN tab_switches INTEGER DEFAULT 0;",
+        "ALTER TABLE student_submissions ADD COLUMN time_spent_secs INTEGER DEFAULT 0;",
+        "ALTER TABLE student_submissions ADD COLUMN proctor_integrity TEXT DEFAULT '100% Clean';"
+    ]:
+        try:
+            cursor.execute(col_sql)
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
     # 12. Schedules table
     cursor.execute(f"""
