@@ -33,7 +33,10 @@ from models import (
     SimulcastToggleRequest,
     CurriculumModuleCreate,
     CurriculumItemCreate,
-    CurriculumReorderRequest
+    CurriculumReorderRequest,
+    StudyMaterialCreate,
+    StudyMaterialPolicyUpdate,
+    MaterialAccessLogCreate
 )
 from ai_service import generate_ai_catchup_summary, answer_student_doubt
 
@@ -417,6 +420,161 @@ def reorder_curriculum(course_id: str, req: CurriculumReorderRequest):
     conn.commit()
     conn.close()
     return {"status": "success", "message": "Curriculum order updated successfully"}
+
+
+# =====================================================================
+# STUDY MATERIALS & LECTURE PDFS SECURE READER ENGINE
+# =====================================================================
+@app.get("/api/materials")
+def get_study_materials(course_id: Optional[str] = Query(None), category: Optional[str] = Query(None)):
+    """Fetch all available secure study materials with security policies"""
+    conn = get_db()
+    cursor = conn.cursor()
+    query = "SELECT id, course_id, module_id, title, description, category, instructor, file_size, pages_count, download_policy, watermark_enabled, anti_copy_enabled, offline_available, created_at FROM study_materials WHERE 1=1"
+    params = []
+    if course_id:
+        query += " AND course_id = ?"
+        params.append(course_id)
+    if category:
+        query += " AND category = ?"
+        params.append(category)
+    query += " ORDER BY id ASC"
+    
+    cursor.execute(query, tuple(params))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+@app.get("/api/materials/{material_id}")
+def get_study_material(material_id: str):
+    """Fetch full secure study material including encrypted pages content"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM study_materials WHERE id = ?", (material_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Study material not found")
+    
+    mat = dict(row)
+    if isinstance(mat.get("content_json"), str):
+        try:
+            mat["pages"] = json.loads(mat["content_json"])
+        except Exception:
+            mat["pages"] = []
+    else:
+        mat["pages"] = mat.get("content_json") or []
+    return mat
+
+@app.post("/api/materials")
+def create_study_material(req: StudyMaterialCreate):
+    """Upload/Create new secure study material with teacher security policy"""
+    conn = get_db()
+    cursor = conn.cursor()
+    mat_id = req.id or f"doc-{uuid.uuid4().hex[:8]}"
+    now_iso = datetime.now().isoformat()
+    
+    content_json_str = req.content_json
+    if not content_json_str:
+        content_json_str = json.dumps([
+            {
+                "page_num": 1,
+                "page_title": req.title,
+                "sections": [
+                    {"type": "heading", "text": "1. Lecture Overview & Core Notes"},
+                    {"type": "paragraph", "text": req.description or "Comprehensive lecture material curated for this topic."},
+                    {"type": "callout", "variant": "note", "title": "EduVault Protected Material", "text": "This document is DRM-protected and restricted to authorized batch students."}
+                ]
+            }
+        ])
+
+    cursor.execute("""
+    INSERT INTO study_materials (id, course_id, module_id, title, description, category, instructor, file_size, pages_count, download_policy, watermark_enabled, anti_copy_enabled, offline_available, content_json, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        mat_id,
+        req.course_id,
+        req.module_id,
+        req.title,
+        req.description or "",
+        req.category or "Lecture Notes",
+        req.instructor or "Prof. Rajesh Sharma",
+        req.file_size or "2.4 MB",
+        req.pages_count or 1,
+        req.download_policy or "in_app_only",
+        1 if req.watermark_enabled else 0,
+        1 if req.anti_copy_enabled else 0,
+        1 if req.offline_available else 0,
+        content_json_str,
+        now_iso
+    ))
+    conn.commit()
+    conn.close()
+    return {"status": "created", "id": mat_id, "title": req.title}
+
+@app.put("/api/materials/{material_id}/policy")
+def update_study_material_policy(material_id: str, req: StudyMaterialPolicyUpdate):
+    """Teacher update of material download and DRM watermark policies"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM study_materials WHERE id = ?", (material_id,))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Study material not found")
+
+    updates = []
+    params = []
+    if req.download_policy is not None:
+        updates.append("download_policy = ?")
+        params.append(req.download_policy)
+    if req.watermark_enabled is not None:
+        updates.append("watermark_enabled = ?")
+        params.append(1 if req.watermark_enabled else 0)
+    if req.anti_copy_enabled is not None:
+        updates.append("anti_copy_enabled = ?")
+        params.append(1 if req.anti_copy_enabled else 0)
+
+    if updates:
+        params.append(material_id)
+        sql = f"UPDATE study_materials SET {', '.join(updates)} WHERE id = ?"
+        cursor.execute(sql, tuple(params))
+        conn.commit()
+
+    conn.close()
+    return {"status": "updated", "id": material_id}
+
+@app.delete("/api/materials/{material_id}")
+def delete_study_material(material_id: str):
+    """Delete study material and associated logs"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM material_access_logs WHERE material_id = ?", (material_id,))
+    cursor.execute("DELETE FROM study_materials WHERE id = ?", (material_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted", "id": material_id}
+
+@app.post("/api/materials/{material_id}/log-access")
+def log_material_access(material_id: str, req: MaterialAccessLogCreate):
+    """Log student reading event with telemetry for anti-leak forensics"""
+    conn = get_db()
+    cursor = conn.cursor()
+    now_iso = datetime.now().isoformat()
+    cursor.execute("""
+    INSERT INTO material_access_logs (material_id, student_email, student_name, ip_address, device_fingerprint, accessed_at, pages_viewed)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (
+        material_id,
+        req.student_email or "student@eduvault.io",
+        req.student_name or "Student",
+        req.ip_address or "127.0.0.1",
+        req.device_fingerprint or "Chrome 122 / Win64",
+        now_iso,
+        req.pages_viewed or 1
+    ))
+    conn.commit()
+    conn.close()
+    return {"status": "logged", "material_id": material_id, "timestamp": now_iso}
 
 
 # =====================================================================

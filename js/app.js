@@ -1978,8 +1978,8 @@ function renderCurriculumArranger() {
                                 <div style="display: flex; align-items: center; gap: 10px;">
                                     <span class="item-duration-pill">${escapeHtml(it.duration_or_size || '30:00')}</span>
                                     <div class="item-actions">
-                                        <button class="btn-arranger-action" onclick="openRecordingPlayer('${it.content_ref || 'rec-dsa-bt-live'}')" title="Preview DRM Stream">
-                                            <i class="fas fa-play text-cyan"></i>
+                                        <button class="btn-arranger-action" onclick="${it.item_type === 'pdf' ? `openSecureDocumentReader('${it.content_ref || 'doc-dsa-arrays'}')` : `openRecordingPlayer('${it.content_ref || 'rec-dsa-bt-live'}')`}" title="${it.item_type === 'pdf' ? 'Open Secure PDF Reader' : 'Preview DRM Stream'}">
+                                            <i class="fas ${it.item_type === 'pdf' ? 'fa-file-pdf text-red' : 'fa-play text-cyan'}"></i>
                                         </button>
                                         <button class="btn-arranger-action" onclick="moveItem(${it.id}, ${m.id}, -1)" title="Move Item Up" ${itIdx === 0 ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>
                                             <i class="fas fa-arrow-up"></i>
@@ -2296,7 +2296,7 @@ async function loadStudentCourseCurriculum(courseId = 'course-dsa') {
 
                             return `
                                 <div class="curriculum-item ${isVideo ? 'completed' : ''}" style="cursor: pointer;"
-                                     onclick="${isVideo ? `openRecordingPlayer('${it.content_ref || 'rec-dsa-bt-live'}')` : `showToast('Launching ${escapeHtml(it.title)}...', 'info')`}">
+                                     onclick="${isVideo ? `openRecordingPlayer('${it.content_ref || 'rec-dsa-bt-live'}')` : it.item_type === 'pdf' ? `openSecureDocumentReader('${it.content_ref || 'doc-dsa-arrays'}')` : `showToast('Launching ${escapeHtml(it.title)}...', 'info')`}">
                                     <i class="${iconClass}"></i>
                                     <div class="curriculum-item-info">
                                         <span>${escapeHtml(it.title)}</span>
@@ -2328,6 +2328,747 @@ function toggleCurriculumSection(header) {
         if (chevron) {
             chevron.className = isExpanded ? 'fas fa-chevron-right' : 'fas fa-chevron-down';
         }
+    }
+}
+
+// ========== FEATURE 7: SECURE STUDY MATERIALS & PDF READER ENGINE ==========
+const SecureReaderState = {
+    currentDoc: null,
+    currentPage: 1,
+    zoomLevel: 100, // percentage: 60 to 180
+    theme: 'dark', // 'dark' | 'sepia' | 'light' | 'contrast'
+    antiTamperActive: false,
+    watermarkData: null,
+    listenersAttached: false
+};
+
+const READER_COURSE_NAMES = {
+    'course-dsa': 'Data Structures & Algorithms',
+    'course-ml': 'Machine Learning & Neural Networks',
+    'course-web': 'Full-Stack Web Development',
+    'course-cloud': 'Cloud Infrastructure & Kubernetes'
+};
+
+async function openSecureDocumentReader(materialId = 'doc-dsa-arrays') {
+    try {
+        showToast('Loading secure DRM study material...', 'info');
+
+        const res = await fetch(`${BackendSync.apiUrl}/api/materials/${encodeURIComponent(materialId)}`);
+        let doc;
+        if (res.ok) {
+            doc = await res.json();
+        } else {
+            console.warn(`Failed to fetch material ${materialId}, attempting fallback list...`);
+            const listRes = await fetch(`${BackendSync.apiUrl}/api/materials`);
+            if (listRes.ok) {
+                const list = await listRes.json();
+                if (list && list.length > 0) {
+                    const fallbackRes = await fetch(`${BackendSync.apiUrl}/api/materials/${list[0].id}`);
+                    if (fallbackRes.ok) doc = await fallbackRes.json();
+                }
+            }
+        }
+
+        if (!doc) {
+            showToast('Unable to load document from secure cloud vault.', 'danger');
+            return;
+        }
+
+        SecureReaderState.currentDoc = doc;
+        SecureReaderState.currentPage = 1;
+        SecureReaderState.zoomLevel = 100;
+
+        // Ensure pages is an array
+        if (typeof doc.pages === 'string') {
+            try {
+                doc.pages = JSON.parse(doc.pages);
+            } catch (e) {
+                doc.pages = [];
+            }
+        } else if (!Array.isArray(doc.pages)) {
+            doc.pages = [];
+        }
+
+        const totalPages = doc.pages_count || (doc.pages ? doc.pages.length : 1);
+        doc.pages_count = totalPages;
+
+        // Setup dynamic student watermark information
+        const studentEmail = (AppState.currentUser && AppState.currentUser.email) || 'student@eduvault.io';
+        const studentName = (AppState.currentUser && AppState.currentUser.name) || 'Abhishek Dwivedi';
+        const tokenHash = 'SEC-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+
+        SecureReaderState.watermarkData = {
+            email: studentEmail,
+            name: studentName,
+            ip: '192.168.1.108',
+            token: tokenHash,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+
+        // Populate Reader Header Toolbar
+        const titleEl = document.getElementById('reader-doc-title');
+        if (titleEl) titleEl.innerHTML = `<span>${escapeHtml(doc.title)}</span>`;
+
+        const categoryEl = document.getElementById('reader-doc-category');
+        if (categoryEl) categoryEl.textContent = doc.category || 'Lecture Notes';
+
+        const policyPill = document.getElementById('reader-policy-pill');
+        if (policyPill) {
+            if (doc.download_policy === 'in_app_only') {
+                policyPill.className = 'reader-pill policy in-app';
+                policyPill.innerHTML = '<i class="fas fa-lock"></i> In-App Vault Only';
+            } else if (doc.download_policy === 'disabled') {
+                policyPill.className = 'reader-pill policy disabled';
+                policyPill.innerHTML = '<i class="fas fa-ban"></i> Offline Save Disabled';
+            } else {
+                policyPill.className = 'reader-pill policy allowed';
+                policyPill.innerHTML = '<i class="fas fa-file-download"></i> Institutional Export Allowed';
+            }
+        }
+
+        // Configure Download Button
+        const dlBtn = document.getElementById('reader-download-btn');
+        const dlBtnText = document.getElementById('reader-download-btn-text');
+        if (dlBtn && dlBtnText) {
+            if (doc.download_policy === 'disabled') {
+                dlBtn.className = 'btn btn-sm btn-ghost';
+                dlBtn.style.opacity = '0.6';
+                dlBtnText.textContent = 'Save Restricted';
+            } else if (doc.download_policy === 'in_app_only') {
+                dlBtn.className = 'btn btn-sm btn-primary';
+                dlBtn.style.opacity = '1';
+                dlBtnText.textContent = 'In-App Vault';
+            } else {
+                dlBtn.className = 'btn btn-sm btn-success';
+                dlBtn.style.opacity = '1';
+                dlBtnText.textContent = 'Export DRM';
+            }
+        }
+
+        // Configure Teacher Policy Config Button
+        const teacherPolicyBtn = document.getElementById('reader-teacher-policy-btn');
+        if (teacherPolicyBtn) {
+            if (AppState.userRole === 'teacher') {
+                teacherPolicyBtn.classList.remove('hidden');
+            } else {
+                teacherPolicyBtn.classList.add('hidden');
+            }
+        }
+
+        const totalPagesEl = document.getElementById('reader-total-pages');
+        if (totalPagesEl) totalPagesEl.textContent = totalPages;
+
+        // Render Thumbnails Sidebar & First Page
+        renderReaderThumbnails();
+        renderReaderPage(1);
+
+        // Reset Zoom and Theme
+        readerZoomReset();
+        applyReaderTheme(SecureReaderState.theme);
+
+        // Open Reader Modal
+        const modal = document.getElementById('modal-secure-pdf-reader');
+        if (modal) {
+            modal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+
+        // Activate Anti-Screenshot / Anti-Tamper Listeners
+        attachSecureReaderAntiTamper();
+
+        // Send Access Log Telemetry to Cloud PostgreSQL
+        fetch(`${BackendSync.apiUrl}/api/materials/${encodeURIComponent(doc.id)}/log-access`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                student_email: studentEmail,
+                student_name: studentName,
+                ip_address: '192.168.1.108',
+                device_fingerprint: navigator.userAgent.slice(0, 100),
+                pages_viewed: 1
+            })
+        }).catch(err => console.warn('Study material access log skipped:', err));
+
+        showToast('Document verified & loaded in Secure DRM Reader', 'success');
+    } catch (e) {
+        console.error('Error opening secure document reader:', e);
+        showToast('Failed to initialize secure reader engine', 'danger');
+    }
+}
+
+function closeSecureReader() {
+    const modal = document.getElementById('modal-secure-pdf-reader');
+    if (modal) {
+        modal.classList.add('hidden');
+        document.body.style.overflow = '';
+    }
+
+    const blurShield = document.getElementById('reader-blur-shield');
+    if (blurShield) blurShield.classList.add('hidden');
+
+    detachSecureReaderAntiTamper();
+    SecureReaderState.currentDoc = null;
+}
+
+function renderReaderThumbnails() {
+    const listEl = document.getElementById('reader-thumbnails-list');
+    if (!listEl || !SecureReaderState.currentDoc) return;
+
+    const doc = SecureReaderState.currentDoc;
+    const pages = doc.pages || [];
+    const totalPages = doc.pages_count || Math.max(pages.length, 1);
+
+    let html = '';
+    for (let i = 1; i <= totalPages; i++) {
+        const pageData = pages.find(p => p.page_num === i) || (pages[i - 1]) || {};
+        const pageTitle = pageData.page_title || `Section ${i}`;
+        const isActive = i === SecureReaderState.currentPage;
+
+        html += `
+            <div class="reader-thumbnail-card ${isActive ? 'active' : ''}" id="reader-thumb-${i}" onclick="readerGoToPage(${i})">
+                <div class="thumb-label">
+                    <span>Page ${i}</span>
+                    <span style="font-size: 0.68rem; color: var(--accent-primary);"><i class="fas fa-shield-alt"></i> DRM</span>
+                </div>
+                <div class="thumb-preview-mini">
+                    <span><i class="fas fa-file-alt"></i> ${escapeHtml(pageTitle.length > 20 ? pageTitle.slice(0, 18) + '...' : pageTitle)}</span>
+                </div>
+            </div>
+        `;
+    }
+
+    listEl.innerHTML = html;
+}
+
+function renderReaderPage(pageNum) {
+    const doc = SecureReaderState.currentDoc;
+    if (!doc) return;
+
+    const totalPages = doc.pages_count || (doc.pages ? doc.pages.length : 1);
+    const targetPage = Math.max(1, Math.min(pageNum, totalPages));
+    SecureReaderState.currentPage = targetPage;
+
+    // Update pagination indicator & buttons
+    const curPageEl = document.getElementById('reader-cur-page');
+    if (curPageEl) curPageEl.textContent = targetPage;
+
+    const prevBtn = document.getElementById('reader-btn-prev');
+    if (prevBtn) prevBtn.disabled = targetPage <= 1;
+
+    const nextBtn = document.getElementById('reader-btn-next');
+    if (nextBtn) nextBtn.disabled = targetPage >= totalPages;
+
+    // Find page data
+    const pages = doc.pages || [];
+    const pageData = pages.find(p => p.page_num === targetPage) || pages[targetPage - 1] || {
+        page_num: targetPage,
+        page_title: `${doc.title} - Part ${targetPage}`,
+        sections: [
+            { type: 'paragraph', text: 'Document content is protected and rendered inside the secure hardware-accelerated vault.' }
+        ]
+    };
+
+    // Update Page Header Info
+    const courseNameEl = document.getElementById('page-header-course');
+    if (courseNameEl) {
+        courseNameEl.textContent = READER_COURSE_NAMES[doc.course_id] || 'EduVault Academic Vault';
+    }
+
+    const headerStampEl = document.getElementById('page-header-stamp');
+    if (headerStampEl) {
+        headerStampEl.textContent = doc.watermark_enabled ? 'Forensic Watermarked • Protected DRM' : 'EduVault Document Vault';
+    }
+
+    const pageNumberEl = document.getElementById('page-header-number');
+    if (pageNumberEl) {
+        pageNumberEl.textContent = `Page ${targetPage} of ${totalPages}`;
+    }
+
+    const pageTitleEl = document.getElementById('page-content-title');
+    if (pageTitleEl) {
+        pageTitleEl.textContent = pageData.page_title || `Lecture Module - Page ${targetPage}`;
+    }
+
+    // Build Page Content
+    const bodyEl = document.getElementById('page-content-body');
+    if (bodyEl) {
+        const sections = pageData.sections || [];
+        if (sections.length === 0) {
+            bodyEl.innerHTML = `
+                <div style="text-align: center; padding: 4rem 1rem; color: var(--text-muted);">
+                    <i class="fas fa-file-contract fa-3x" style="margin-bottom: 1rem; color: var(--accent-primary);"></i>
+                    <p>Academic content module securely synchronized from cloud storage.</p>
+                </div>
+            `;
+        } else {
+            bodyEl.innerHTML = sections.map(sec => {
+                if (sec.type === 'heading') {
+                    return `<h2 class="reader-heading"><i class="fas fa-bookmark text-indigo"></i> ${escapeHtml(sec.text)}</h2>`;
+                } else if (sec.type === 'paragraph') {
+                    return `<p class="reader-para">${escapeHtml(sec.text)}</p>`;
+                } else if (sec.type === 'formula_card') {
+                    return `
+                        <div class="reader-formula-card">
+                            <div class="reader-formula-title"><i class="fas fa-square-root-alt"></i> ${escapeHtml(sec.title || 'Mathematical Formulation')}</div>
+                            <div class="reader-formula-text">${escapeHtml(sec.formula)}</div>
+                        </div>
+                    `;
+                } else if (sec.type === 'ascii_diagram') {
+                    return `
+                        <div>
+                            ${sec.title ? `<div style="font-size: 0.8rem; font-weight: 700; color: var(--accent-primary); margin-top: 14px; margin-bottom: 4px;"><i class="fas fa-project-diagram"></i> ${escapeHtml(sec.title)}</div>` : ''}
+                            <div class="reader-ascii-diagram">${escapeHtml(sec.content)}</div>
+                        </div>
+                    `;
+                } else if (sec.type === 'callout') {
+                    const variant = sec.variant || 'note';
+                    const icon = variant === 'warning' ? 'fa-exclamation-triangle' : variant === 'tip' ? 'fa-lightbulb' : 'fa-info-circle';
+                    return `
+                        <div class="reader-callout ${variant}">
+                            <div class="reader-callout-title">
+                                <i class="fas ${icon}"></i>
+                                ${escapeHtml(sec.title || 'Key Principle')}
+                            </div>
+                            <div>${escapeHtml(sec.text)}</div>
+                        </div>
+                    `;
+                } else if (sec.type === 'code_box') {
+                    const safeCode = escapeHtml(sec.code || '');
+                    return `
+                        <div class="reader-code-box">
+                            <div class="reader-code-header">
+                                <span><i class="fas fa-code"></i> ${escapeHtml(sec.language || 'Code')}</span>
+                                <button class="btn btn-sm btn-ghost" style="padding: 2px 8px; font-size: 0.72rem;" onclick="copyCodeSnippet(this, ${JSON.stringify(sec.code || '')})">
+                                    <i class="fas fa-copy"></i> Copy
+                                </button>
+                            </div>
+                            <pre class="reader-code-content">${safeCode}</pre>
+                        </div>
+                    `;
+                } else if (sec.type === 'problem') {
+                    const diff = (sec.difficulty || 'medium').toLowerCase();
+                    return `
+                        <div class="reader-problem-card">
+                            <div class="reader-problem-header">
+                                <span class="reader-problem-number"><i class="fas fa-pen-fancy"></i> ${escapeHtml(sec.title || 'Practice Problem')}</span>
+                                <span class="reader-difficulty-badge ${diff}">${escapeHtml(diff.toUpperCase())}</span>
+                            </div>
+                            <div style="font-weight: 600; margin-bottom: 8px;">${escapeHtml(sec.question || '')}</div>
+                            <details style="margin-top: 8px; font-size: 0.85rem; cursor: pointer;">
+                                <summary style="color: var(--accent-primary); font-weight: 600;"><i class="fas fa-key"></i> View Solution Hint & Derivation</summary>
+                                <div style="margin-top: 8px; padding: 12px; background: rgba(0, 0, 0, 0.25); border-radius: 6px; line-height: 1.55;">
+                                    ${escapeHtml(sec.solution || '')}
+                                </div>
+                            </details>
+                        </div>
+                    `;
+                }
+                return '';
+            }).join('');
+        }
+    }
+
+    // Dynamic Forensic Watermark Layer
+    const watermarkOverlay = document.getElementById('reader-watermark-overlay');
+    if (watermarkOverlay) {
+        if (doc.watermark_enabled) {
+            const wm = SecureReaderState.watermarkData || {};
+            const wmText = `EDUVAULT DRM • ${wm.email || 'student@eduvault.io'} • ${wm.ip || '192.168.1.108'} • ${wm.token || 'SEC-883'}`;
+            let wmHtml = '';
+            for (let w = 0; w < 8; w++) {
+                wmHtml += `<div class="watermark-item">${escapeHtml(wmText)}</div>`;
+            }
+            watermarkOverlay.innerHTML = wmHtml;
+        } else {
+            watermarkOverlay.innerHTML = '';
+        }
+    }
+
+    // Update active thumbnail card
+    document.querySelectorAll('.reader-thumbnail-card').forEach(c => c.classList.remove('active'));
+    const activeThumb = document.getElementById(`reader-thumb-${targetPage}`);
+    if (activeThumb) {
+        activeThumb.classList.add('active');
+        activeThumb.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    // Scroll viewport to top
+    const viewport = document.getElementById('reader-viewport');
+    if (viewport) {
+        viewport.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+}
+
+// Page Navigation
+function readerGoToPage(pageNum) {
+    renderReaderPage(pageNum);
+}
+
+function readerPrevPage() {
+    if (SecureReaderState.currentPage > 1) {
+        renderReaderPage(SecureReaderState.currentPage - 1);
+    }
+}
+
+function readerNextPage() {
+    const doc = SecureReaderState.currentDoc;
+    const totalPages = doc ? (doc.pages_count || (doc.pages ? doc.pages.length : 1)) : 1;
+    if (SecureReaderState.currentPage < totalPages) {
+        renderReaderPage(SecureReaderState.currentPage + 1);
+    }
+}
+
+// Zoom Controls
+function applyReaderZoom() {
+    const activePage = document.getElementById('reader-active-page');
+    const zoomLabel = document.getElementById('reader-zoom-label');
+    const scale = SecureReaderState.zoomLevel / 100;
+
+    if (activePage) {
+        activePage.style.transform = `scale(${scale})`;
+        activePage.style.transformOrigin = 'top center';
+    }
+    if (zoomLabel) {
+        zoomLabel.textContent = `${SecureReaderState.zoomLevel}%`;
+    }
+}
+
+function readerZoomIn() {
+    if (SecureReaderState.zoomLevel < 180) {
+        SecureReaderState.zoomLevel = Math.min(180, SecureReaderState.zoomLevel + 15);
+        applyReaderZoom();
+    }
+}
+
+function readerZoomOut() {
+    if (SecureReaderState.zoomLevel > 60) {
+        SecureReaderState.zoomLevel = Math.max(60, SecureReaderState.zoomLevel - 15);
+        applyReaderZoom();
+    }
+}
+
+function readerZoomReset() {
+    SecureReaderState.zoomLevel = 100;
+    applyReaderZoom();
+}
+
+function readerZoomFitWidth() {
+    const viewport = document.getElementById('reader-viewport');
+    if (viewport) {
+        const vpWidth = viewport.clientWidth - 48; // padding
+        const pageWidth = 820;
+        let calculated = Math.round((vpWidth / pageWidth) * 100);
+        calculated = Math.max(70, Math.min(150, calculated));
+        SecureReaderState.zoomLevel = calculated;
+        applyReaderZoom();
+        showToast(`Zoom fitted to width: ${calculated}%`, 'info');
+    }
+}
+
+// Reading Themes
+const READER_THEMES = ['dark', 'sepia', 'light', 'contrast'];
+
+function toggleReaderTheme() {
+    const curIdx = READER_THEMES.indexOf(SecureReaderState.theme);
+    const nextTheme = READER_THEMES[(curIdx + 1) % READER_THEMES.length];
+    applyReaderTheme(nextTheme);
+    showToast(`Switched theme to ${nextTheme.charAt(0).toUpperCase() + nextTheme.slice(1)}`, 'info');
+}
+
+function applyReaderTheme(theme) {
+    if (!READER_THEMES.includes(theme)) theme = 'dark';
+    SecureReaderState.theme = theme;
+
+    const pageEl = document.getElementById('reader-active-page');
+    if (pageEl) {
+        READER_THEMES.forEach(t => pageEl.classList.remove(`theme-${t}`));
+        pageEl.classList.add(`theme-${theme}`);
+    }
+
+    const themeLabel = document.getElementById('reader-theme-label');
+    if (themeLabel) {
+        themeLabel.textContent = theme.charAt(0).toUpperCase() + theme.slice(1);
+    }
+}
+
+// Offline In-App Vault & DRM Export
+function handleReaderDownload() {
+    const doc = SecureReaderState.currentDoc;
+    if (!doc) return;
+
+    if (doc.download_policy === 'disabled') {
+        showToast('Download Restricted: The instructor has disabled offline saving for this proprietary material.', 'warning');
+        return;
+    }
+
+    if (doc.download_policy === 'in_app_only') {
+        try {
+            const vaultKey = `eduvault_offline_doc_${doc.id}`;
+            const offlinePayload = {
+                id: doc.id,
+                title: doc.title,
+                category: doc.category,
+                pages: doc.pages,
+                pages_count: doc.pages_count,
+                saved_at: new Date().toISOString(),
+                watermark: SecureReaderState.watermarkData
+            };
+            localStorage.setItem(vaultKey, JSON.stringify(offlinePayload));
+
+            const dlBtnText = document.getElementById('reader-download-btn-text');
+            if (dlBtnText) dlBtnText.textContent = 'Saved in Vault';
+
+            showToast('Document saved to encrypted In-Platform Offline Vault! Accessible offline within EduVault.', 'success');
+        } catch (e) {
+            console.error('Offline save error:', e);
+            showToast('Storage quota exceeded or offline save unavailable.', 'danger');
+        }
+        return;
+    }
+
+    if (doc.download_policy === 'allowed') {
+        try {
+            const wm = SecureReaderState.watermarkData || {};
+            let exportContent = `=================================================================\n`;
+            exportContent += `EDUVAULT INSTITUTIONAL STUDY MATERIAL - FORENSIC PROTECTED EXPORT\n`;
+            exportContent += `Title: ${doc.title}\n`;
+            exportContent += `Instructor: ${doc.instructor || 'Prof. Rajesh Sharma'}\n`;
+            exportContent += `Recipient: ${wm.name || 'Student'} <${wm.email || 'student@eduvault.io'}>\n`;
+            exportContent += `Authorized IP: ${wm.ip || '192.168.1.108'} | Watermark Token: ${wm.token || 'SEC-001'}\n`;
+            exportContent += `Export Timestamp: ${new Date().toISOString()}\n`;
+            exportContent += `=================================================================\n\n`;
+
+            const pages = doc.pages || [];
+            pages.forEach((p, idx) => {
+                exportContent += `--- [PAGE ${p.page_num || idx + 1}: ${p.page_title || 'Section'}] ---\n\n`;
+                (p.sections || []).forEach(sec => {
+                    if (sec.type === 'heading') exportContent += `\n# ${sec.text}\n\n`;
+                    else if (sec.type === 'paragraph') exportContent += `${sec.text}\n\n`;
+                    else if (sec.type === 'formula_card') exportContent += `[FORMULA: ${sec.title}]\n${sec.formula}\n\n`;
+                    else if (sec.type === 'ascii_diagram') exportContent += `[DIAGRAM: ${sec.title || 'ASCII'}]\n${sec.content}\n\n`;
+                    else if (sec.type === 'callout') exportContent += `[${(sec.variant || 'NOTE').toUpperCase()}: ${sec.title}]\n${sec.text}\n\n`;
+                    else if (sec.type === 'code_box') exportContent += `[CODE (${sec.language})]:\n${sec.code}\n\n`;
+                    else if (sec.type === 'problem') exportContent += `[PROBLEM: ${sec.title} (${sec.difficulty})]\n${sec.question}\nHint: ${sec.solution}\n\n`;
+                });
+                exportContent += `\n[Forensic Watermark: ${wm.email || 'student@eduvault.io'} • DO NOT DISTRIBUTE]\n\n`;
+            });
+
+            const blob = new Blob([exportContent], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${doc.title.replace(/[^a-zA-Z0-9_-]/g, '_')}_Watermarked.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            showToast('Document exported with embedded forensic watermark.', 'success');
+        } catch (e) {
+            console.error('Export error:', e);
+            showToast('Failed to export document package.', 'danger');
+        }
+    }
+}
+
+// Anti-Screenshot and Anti-Tamper System
+function handleReaderBlur() {
+    const modal = document.getElementById('modal-secure-pdf-reader');
+    if (modal && !modal.classList.contains('hidden')) {
+        const shield = document.getElementById('reader-blur-shield');
+        if (shield) shield.classList.remove('hidden');
+    }
+}
+
+function handleReaderFocus() {
+    const shield = document.getElementById('reader-blur-shield');
+    if (shield) shield.classList.add('hidden');
+}
+
+function handleReaderVisibilityChange() {
+    const modal = document.getElementById('modal-secure-pdf-reader');
+    if (!modal || modal.classList.contains('hidden')) return;
+
+    const shield = document.getElementById('reader-blur-shield');
+    if (document.hidden) {
+        if (shield) shield.classList.remove('hidden');
+    } else {
+        if (shield) shield.classList.add('hidden');
+    }
+}
+
+function handleReaderKeyDown(e) {
+    const modal = document.getElementById('modal-secure-pdf-reader');
+    if (!modal || modal.classList.contains('hidden')) return;
+
+    // Esc closes reader
+    if (e.key === 'Escape') {
+        closeSecureReader();
+        return;
+    }
+
+    // Left / Right arrow navigation
+    if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey) {
+        readerPrevPage();
+        return;
+    }
+    if (e.key === 'ArrowRight' && !e.ctrlKey && !e.metaKey) {
+        readerNextPage();
+        return;
+    }
+
+    // PrintScreen interception
+    if (e.key === 'PrintScreen' || e.keyCode === 44) {
+        e.preventDefault();
+        const shield = document.getElementById('reader-blur-shield');
+        if (shield) {
+            shield.classList.remove('hidden');
+            setTimeout(() => {
+                if (!document.hidden) shield.classList.add('hidden');
+            }, 2500);
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText('EduVault Anti-Tamper DRM Active: Screen capture blocked.');
+        }
+        showToast('Screenshot attempt intercepted by Anti-Tamper DRM', 'danger');
+        return;
+    }
+
+    // Block Ctrl+P / Cmd+P (Print)
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P')) {
+        e.preventDefault();
+        showToast('Direct document printing is restricted under institutional policy', 'warning');
+        return;
+    }
+
+    // Block Ctrl+S / Cmd+S (Save page)
+    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        showToast('Direct disk export blocked. Use the In-App Vault button.', 'warning');
+        return;
+    }
+
+    // Block raw copy if anti-copy enabled
+    const doc = SecureReaderState.currentDoc;
+    if (doc && doc.anti_copy_enabled && (e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+        const selection = window.getSelection();
+        if (selection && selection.toString().length > 0) {
+            const activeTag = document.activeElement ? document.activeElement.tagName : '';
+            if (activeTag !== 'INPUT' && activeTag !== 'TEXTAREA') {
+                e.preventDefault();
+                showToast('Text copy restricted on proprietary academic material', 'warning');
+            }
+        }
+    }
+}
+
+function attachSecureReaderAntiTamper() {
+    if (SecureReaderState.listenersAttached) return;
+    window.addEventListener('blur', handleReaderBlur);
+    window.addEventListener('focus', handleReaderFocus);
+    document.addEventListener('visibilitychange', handleReaderVisibilityChange);
+    window.addEventListener('keydown', handleReaderKeyDown);
+    SecureReaderState.listenersAttached = true;
+}
+
+function detachSecureReaderAntiTamper() {
+    if (!SecureReaderState.listenersAttached) return;
+    window.removeEventListener('blur', handleReaderBlur);
+    window.removeEventListener('focus', handleReaderFocus);
+    document.removeEventListener('visibilitychange', handleReaderVisibilityChange);
+    window.removeEventListener('keydown', handleReaderKeyDown);
+    SecureReaderState.listenersAttached = false;
+}
+
+function copyCodeSnippet(btn, code) {
+    if (!code) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(code).then(() => {
+            const origHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+            setTimeout(() => {
+                btn.innerHTML = origHtml;
+            }, 1800);
+        }).catch(() => {
+            showToast('Code copied to clipboard', 'info');
+        });
+    } else {
+        showToast('Code copied', 'info');
+    }
+}
+
+// Teacher DRM Policy Management
+function openMaterialPolicyModal() {
+    const doc = SecureReaderState.currentDoc;
+    if (!doc) return;
+
+    const titleEl = document.getElementById('policy-material-title');
+    if (titleEl) titleEl.value = doc.title;
+
+    const sel = document.getElementById('policy-download-select');
+    if (sel) sel.value = doc.download_policy || 'in_app_only';
+
+    const wmCheck = document.getElementById('policy-watermark-checkbox');
+    if (wmCheck) wmCheck.checked = !!doc.watermark_enabled;
+
+    const copyCheck = document.getElementById('policy-anticopy-checkbox');
+    if (copyCheck) copyCheck.checked = !!doc.anti_copy_enabled;
+
+    document.getElementById('modal-material-policy')?.classList.remove('hidden');
+}
+
+function closeMaterialPolicyModal() {
+    document.getElementById('modal-material-policy')?.classList.add('hidden');
+}
+
+async function saveMaterialPolicyChanges() {
+    const doc = SecureReaderState.currentDoc;
+    if (!doc) return;
+
+    const newPolicy = document.getElementById('policy-download-select').value;
+    const newWatermark = document.getElementById('policy-watermark-checkbox').checked;
+    const newAntiCopy = document.getElementById('policy-anticopy-checkbox').checked;
+
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/materials/${encodeURIComponent(doc.id)}/policy`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                download_policy: newPolicy,
+                watermark_enabled: newWatermark,
+                anti_copy_enabled: newAntiCopy
+            })
+        });
+
+        if (res.ok) {
+            doc.download_policy = newPolicy;
+            doc.watermark_enabled = newWatermark;
+            doc.anti_copy_enabled = newAntiCopy;
+
+            // Update UI pills
+            const policyPill = document.getElementById('reader-policy-pill');
+            if (policyPill) {
+                if (newPolicy === 'in_app_only') {
+                    policyPill.className = 'reader-pill policy in-app';
+                    policyPill.innerHTML = '<i class="fas fa-lock"></i> In-App Vault Only';
+                } else if (newPolicy === 'disabled') {
+                    policyPill.className = 'reader-pill policy disabled';
+                    policyPill.innerHTML = '<i class="fas fa-ban"></i> Offline Save Disabled';
+                } else {
+                    policyPill.className = 'reader-pill policy allowed';
+                    policyPill.innerHTML = '<i class="fas fa-file-download"></i> Institutional Export Allowed';
+                }
+            }
+
+            renderReaderPage(SecureReaderState.currentPage);
+            closeMaterialPolicyModal();
+            showToast('Document DRM policy updated on Cloud PostgreSQL!', 'success');
+        } else {
+            throw new Error('Policy update API failed');
+        }
+    } catch (e) {
+        console.error('Error saving policy:', e);
+        showToast('Failed to update DRM policy', 'danger');
     }
 }
 

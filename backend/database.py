@@ -75,7 +75,7 @@ class UnifiedCursor:
                 # Add conflict handling for primary keys where applicable
                 if "users (" in pg_sql:
                     pg_sql += " ON CONFLICT (email) DO NOTHING"
-                elif "courses (" in pg_sql or "assessments (" in pg_sql or "recordings (" in pg_sql or "ai_summaries (" in pg_sql:
+                elif "courses (" in pg_sql or "assessments (" in pg_sql or "recordings (" in pg_sql or "ai_summaries (" in pg_sql or "study_materials (" in pg_sql:
                     pg_sql += " ON CONFLICT (id) DO NOTHING"
             
             res = self._cur.execute(pg_sql, params)
@@ -101,7 +101,7 @@ class UnifiedCursor:
             if "INSERT INTO" in sql and "ON CONFLICT" not in pg_sql:
                 if "users (" in pg_sql:
                     pg_sql += " ON CONFLICT (email) DO NOTHING"
-                elif "courses (" in pg_sql or "assessments (" in pg_sql or "recordings (" in pg_sql:
+                elif "courses (" in pg_sql or "assessments (" in pg_sql or "recordings (" in pg_sql or "study_materials (" in pg_sql:
                     pg_sql += " ON CONFLICT (id) DO NOTHING"
             return self._cur.executemany(pg_sql, seq_of_params)
         else:
@@ -502,6 +502,41 @@ def init_db():
     );
     """)
 
+    # 19. Study Materials & Lecture PDFs Secure Vault Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS study_materials (
+        id TEXT PRIMARY KEY,
+        course_id TEXT NOT NULL,
+        module_id INTEGER,
+        title TEXT NOT NULL,
+        description TEXT,
+        category TEXT NOT NULL DEFAULT 'Lecture Notes',
+        instructor TEXT NOT NULL DEFAULT 'Prof. Rajesh Sharma',
+        file_size TEXT NOT NULL DEFAULT '2.4 MB',
+        pages_count INTEGER NOT NULL DEFAULT 4,
+        download_policy TEXT NOT NULL DEFAULT 'in_app_only',
+        watermark_enabled INTEGER NOT NULL DEFAULT 1,
+        anti_copy_enabled INTEGER NOT NULL DEFAULT 1,
+        offline_available INTEGER NOT NULL DEFAULT 1,
+        content_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    """)
+
+    # 20. Study Material Access Audit Logs
+    cursor.execute(f"""
+    CREATE TABLE IF NOT EXISTS material_access_logs (
+        id {id_primary_key},
+        material_id TEXT NOT NULL,
+        student_email TEXT NOT NULL,
+        student_name TEXT NOT NULL,
+        ip_address TEXT NOT NULL,
+        device_fingerprint TEXT,
+        accessed_at TEXT NOT NULL,
+        pages_viewed INTEGER DEFAULT 1
+    );
+    """)
+
     conn.commit()
 
     # Automated migration for existing student_enrollments schema
@@ -736,6 +771,311 @@ def seed_additional_tables(cursor):
         INSERT INTO curriculum_items (module_id, course_id, title, item_type, duration_or_size, content_ref, sort_order, is_completed, is_locked, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, items)
+
+    # 19. Seed Study Materials & Lecture Notes
+    cursor.execute("SELECT COUNT(*) FROM study_materials")
+    if cursor.fetchone()[0] == 0:
+        materials = [
+            (
+                "doc-dsa-arrays",
+                "course-dsa",
+                1,
+                "Arrays, Memory Geometry & Two-Pointer Invariants.pdf",
+                "Faculty lecture notes on contiguous memory layout, spatial cache locality, two-pointer convergence, and sliding window optimization.",
+                "Lecture Notes",
+                "Prof. Rajesh Sharma",
+                "2.8 MB",
+                4,
+                "in_app_only",
+                1,
+                1,
+                1,
+                json.dumps([
+                    {
+                        "page_num": 1,
+                        "page_title": "Contiguous Memory Layout & Array Mechanics",
+                        "sections": [
+                            {"type": "heading", "text": "1. Hardware Architecture & Spatial Cache Locality"},
+                            {"type": "paragraph", "text": "In modern computer systems, an Array represents a strictly contiguous memory buffer allocated in RAM. Unlike linked node structures that require pointer dereferencing across fragmented memory addresses, arrays leverage CPU L1/L2 Spatial Cache Locality. When reading index A[0], the memory controller fetches an entire 64-byte Cache Line, loading adjacent elements into high-speed SRAM registers automatically."},
+                            {"type": "formula_card", "title": "Index Pointer Arithmetic Equation", "formula": "MemoryAddress(A[i]) = BaseAddress + (i × sizeof(ElementType))"},
+                            {"type": "ascii_diagram", "title": "Physical RAM Byte Layout (64-bit Architecture)", "content": "+-------------------+-------------------+-------------------+\n| A[0] (0x7FFE0000) | A[1] (0x7FFE0004) | A[2] (0x7FFE0008) |\n| Val: 42 (4 bytes) | Val: 99 (4 bytes) | Val: 17 (4 bytes) |\n+-------------------+-------------------+-------------------+\n ^                   ^                   ^\n Base Address       Base + 4 bytes      Base + 8 bytes"},
+                            {"type": "callout", "variant": "note", "title": "Complexity Guarantees", "text": "• Random Access A[k]: O(1) constant time via direct offset arithmetic.\n• Append (End): O(1) amortized via 2x geometric capacity reallocation.\n• Insert/Delete at k: O(N - k) linear shifting overhead."}
+                        ]
+                    },
+                    {
+                        "page_num": 2,
+                        "page_title": "The Two-Pointer Convergence Pattern",
+                        "sections": [
+                            {"type": "heading", "text": "2. Opposite-Direction Converging Pointers"},
+                            {"type": "paragraph", "text": "The Two-Pointer strategy reduces naive O(N²) quadratic search spaces to optimal O(N) linear time on sorted arrays. By maintaining left and right boundary pointers, each comparison eliminates an entire row or column of search candidates."},
+                            {"type": "code", "language": "python", "title": "Two-Sum on Sorted Array (Optimal O(N) Algorithm)", "code": "def two_sum_sorted(nums: list[int], target: int) -> list[int]:\n    left, right = 0, len(nums) - 1\n    while left < right:\n        curr_sum = nums[left] + nums[right]\n        if curr_sum == target:\n            return [left, right] # Target found\n        elif curr_sum < target:\n            left += 1  # Invariant: nums[left] too small, advance\n        else:\n            right -= 1 # Invariant: nums[right] too large, decrease\n    return []"},
+                            {"type": "callout", "variant": "tip", "title": "Key Loop Invariant", "text": "At each step, nums[left] + nums[right] proves whether the pair can exist with the current left or right candidate. Because the sequence is monotonic, we discard one invalid element per iteration."}
+                        ]
+                    },
+                    {
+                        "page_num": 3,
+                        "page_title": "Sliding Window Dynamic Optimization",
+                        "sections": [
+                            {"type": "heading", "text": "3. Variable-Sized Substring & Subarray Windows"},
+                            {"type": "paragraph", "text": "A sliding window maintains a contiguous subsegment [L, R] whose internal state satisfies a monotonic condition (e.g. at most K distinct characters, or sum >= Target)."},
+                            {"type": "ascii_diagram", "title": "Sliding Window Expansion & Contraction", "content": "Initial Window:   [ A  B  C ] D  E  F   (Sum = 6)\nExpand Right:     [ A  B  C   D ] E  F   (Sum = 10, invalid!)\nShrink Left:        A [ B  C   D ] E  F   (Sum = 9, valid!)"},
+                            {"type": "callout", "variant": "note", "title": "Amortized Complexity Bound", "text": "Although the algorithm contains a nested while loop for window shrinkage, each element enters the window at R exactly once and exits at L at most once. Hence, Total operations ≤ 2N, giving strictly O(N) runtime."}
+                        ]
+                    },
+                    {
+                        "page_num": 4,
+                        "page_title": "Interview Traps & Practice Challenge Set",
+                        "sections": [
+                            {"type": "heading", "text": "4. Faculty Selected Problem Set"},
+                            {"type": "callout", "variant": "warning", "title": "Common Student Trap: Dynamic Array Shifting", "text": "Deleting elements from index 0 in a Python list or JavaScript array triggers an O(N) memmove underneath! Always use a deque or pointer offset when building queues."},
+                            {"type": "practice_problem", "number": "P1.1", "title": "Container With Most Water", "difficulty": "Medium", "text": "Given n non-negative integers representing heights, find two lines that together with x-axis forms a container containing the most water.", "constraint": "Time: O(N), Space: O(1)"},
+                            {"type": "practice_problem", "number": "P1.2", "title": "Minimum Size Subarray Sum", "difficulty": "Medium", "text": "Find the minimal length of a contiguous subarray of which the sum >= target. If there is no such subarray, return 0.", "constraint": "Time: O(N), Space: O(1)"}
+                        ]
+                    }
+                ]),
+                now_iso
+            ),
+            (
+                "doc-arrays-pdf",
+                "course-dsa",
+                1,
+                "1.5 Practice Problems Sheet.pdf",
+                "Faculty problem set on arrays, dynamic resizing, two pointers, and prefix sums.",
+                "Practice Problems",
+                "Prof. Rajesh Sharma",
+                "2.4 MB",
+                4,
+                "in_app_only",
+                1,
+                1,
+                1,
+                json.dumps([
+                    {
+                        "page_num": 1,
+                        "page_title": "Practice Problems: Array Fundamentals & Prefix Sums",
+                        "sections": [
+                            {"type": "heading", "text": "Part A: Core Operations & Complexity Verification"},
+                            {"type": "paragraph", "text": "Complete the following 4 foundational problems before attempting the Module 1 quiz. Focus on achieving optimal space complexity O(1)."},
+                            {"type": "practice_problem", "number": "Problem 1", "title": "Running Sum of 1D Array", "difficulty": "Easy", "text": "Given an array nums, define a running sum where runningSum[i] = sum(nums[0]…nums[i]). Return in-place.", "constraint": "Time: O(N), Space: O(1)"},
+                            {"type": "practice_problem", "number": "Problem 2", "title": "Product of Array Except Self", "difficulty": "Medium", "text": "Return an array output such that output[i] is equal to the product of all elements of nums except nums[i]. You must solve it without division.", "constraint": "Time: O(N), Space: O(1)"}
+                        ]
+                    },
+                    {
+                        "page_num": 2,
+                        "page_title": "Part B: Two-Pointer & In-Place Reversals",
+                        "sections": [
+                            {"type": "heading", "text": "Subarray Invariant Challenges"},
+                            {"type": "practice_problem", "number": "Problem 3", "title": "Trapping Rain Water", "difficulty": "Hard", "text": "Given n non-negative integers representing an elevation map where the width of each bar is 1, compute how much water it can trap after raining.", "constraint": "Time: O(N), Space: O(1) two pointers"},
+                            {"type": "code", "language": "python", "title": "Reference Two-Pointer Scaffold", "code": "# Hint: Maintain left_max and right_max invariants\nleft, right = 0, len(height) - 1\nleft_max, right_max = 0, 0\nwater = 0\nwhile left < right:\n    if height[left] < height[right]:\n        if height[left] >= left_max: left_max = height[left]\n        else: water += left_max - height[left]\n        left += 1\n    else:\n        if height[right] >= right_max: right_max = height[right]\n        else: water += right_max - height[right]\n        right -= 1"}
+                        ]
+                    },
+                    {
+                        "page_num": 3,
+                        "page_title": "Part C: Sliding Window Applications",
+                        "sections": [
+                            {"type": "heading", "text": "String & Subarray Subsegments"},
+                            {"type": "practice_problem", "number": "Problem 4", "title": "Longest Substring Without Repeating Characters", "difficulty": "Medium", "text": "Find the length of the longest substring without duplicate characters.", "constraint": "Time: O(N), Space: O(min(N, M)) hash map"}
+                        ]
+                    },
+                    {
+                        "page_num": 4,
+                        "page_title": "Answer Key & Self-Grading Matrix",
+                        "sections": [
+                            {"type": "heading", "text": "Self-Assessment Benchmarks"},
+                            {"type": "callout", "variant": "note", "title": "Target Benchmarks for Module Exam", "text": "• Time to solve Problem 1 + 2: < 15 minutes.\n• Time to solve Problem 3: < 25 minutes.\n• Submit code via the 'Coding Exercise' tab to receive automated AST test suite validation."}
+                        ]
+                    }
+                ]),
+                now_iso
+            ),
+            (
+                "doc-dsa-trees",
+                "course-dsa",
+                3,
+                "Binary Trees, AVL Rotations & BST Invariants.pdf",
+                "Complete reference manual covering binary trees, recursive traversals, BST validation invariants, and self-balancing AVL trees.",
+                "Master Cheatsheet",
+                "Prof. Rajesh Sharma",
+                "3.4 MB",
+                4,
+                "in_app_only",
+                1,
+                1,
+                1,
+                json.dumps([
+                    {
+                        "page_num": 1,
+                        "page_title": "Mathematical Properties of Hierarchical Trees",
+                        "sections": [
+                            {"type": "heading", "text": "1. Fundamental Binary Tree Theorems"},
+                            {"type": "paragraph", "text": "A Binary Tree is a non-linear hierarchical data structure where each node has at most two children denoted as left and right child pointers."},
+                            {"type": "formula_card", "title": "Combinatorial Bounds", "formula": "Max Nodes at Level L = 2^L  |  Min Height of N Nodes = ⌊log₂(N)⌋ + 1"},
+                            {"type": "ascii_diagram", "title": "Full vs Complete Binary Tree Structure", "content": "      [ 1 ]                  [ 1 ]\n     /     \\                /     \\\n   [ 2 ]  [ 3 ]           [ 2 ]  [ 3 ]\n   /   \\  /   \\           /   \\\n [4]  [5][6]  [7]       [4]  [5]\n   (Full Tree)         (Complete Tree)"}
+                        ]
+                    },
+                    {
+                        "page_num": 2,
+                        "page_title": "Recursive Traversal Patterns & Call Stack",
+                        "sections": [
+                            {"type": "heading", "text": "2. Preorder, Inorder, and Postorder Recurrences"},
+                            {"type": "paragraph", "text": "Tree traversals reflect depth-first exploration of the recursive call tree. Inorder traversal (Left, Root, Right) on a valid BST always yields strictly monotonically ascending values."},
+                            {"type": "code", "language": "python", "title": "Morris O(1) Space Inorder Traversal", "code": "def morris_inorder_traversal(root):\n    curr = root\n    result = []\n    while curr:\n        if not curr.left:\n            result.append(curr.val)\n            curr = curr.right\n        else:\n            prev = curr.left\n            while prev.right and prev.right != curr:\n                prev = prev.right\n            if not prev.right:\n                prev.right = curr # Establish thread\n                curr = curr.left\n            else:\n                prev.right = None # Remove thread\n                result.append(curr.val)\n                curr = curr.right\n    return result"}
+                        ]
+                    },
+                    {
+                        "page_num": 3,
+                        "page_title": "Binary Search Tree (BST) Validation Invariant",
+                        "sections": [
+                            {"type": "heading", "text": "3. Subtree Interval Invariant"},
+                            {"type": "paragraph", "text": "The BST invariant requires ALL nodes in the left subtree to be strictly bounded: -∞ < LeftSubtree < Node.val < RightSubtree < +∞."},
+                            {"type": "callout", "variant": "note", "title": "Correct Validation Bound", "text": "Pass allowable (low, high) bounds down the call stack: is_valid(node.left, low, node.val) and is_valid(node.right, node.val, high)."}
+                        ]
+                    },
+                    {
+                        "page_num": 4,
+                        "page_title": "Self-Balancing AVL Rotations (LL, RR, LR, RL)",
+                        "sections": [
+                            {"type": "heading", "text": "4. AVL Rebalancing & Height Preservation"},
+                            {"type": "paragraph", "text": "AVL trees maintain Balance Factor BF(node) = Height(Left) - Height(Right) ∈ {-1, 0, 1}. When |BF| ≥ 2, constant-time pointer rotations restore O(log N) lookup height."},
+                            {"type": "ascii_diagram", "title": "Left Rotation (RR Imbalance)", "content": "    [ A ]                     [ B ]\n     \\                       /     \\\n     [ B ]       ===>      [ A ]   [ C ]\n       \\                    \\\n       [ C ]                (T2)"}
+                        ]
+                    }
+                ]),
+                now_iso
+            ),
+            (
+                "doc-dsa-cheatsheet",
+                "course-dsa",
+                1,
+                "Master Algorithm Complexity & Asymptotic Analysis Guide.pdf",
+                "Quick-lookup reference sheet comparing Big-O time and space complexities, Master Theorem rules, and sorting stability matrices.",
+                "Quick Reference",
+                "Prof. Rajesh Sharma",
+                "1.8 MB",
+                3,
+                "in_app_only",
+                1,
+                1,
+                1,
+                json.dumps([
+                    {
+                        "page_num": 1,
+                        "page_title": "Asymptotic Analysis & The Master Theorem",
+                        "sections": [
+                            {"type": "heading", "text": "1. Master Theorem Recurrence Solver"},
+                            {"type": "paragraph", "text": "For divide-and-conquer recurrences of the form T(N) = a·T(N/b) + f(N) where a ≥ 1, b > 1:"},
+                            {"type": "formula_card", "title": "Master Theorem Cases", "formula": "Case 1: f(N) = O(N^(log_b(a) - ε)) ⇒ T(N) = Θ(N^(log_b(a)))\nCase 2: f(N) = Θ(N^(log_b(a)) · log^k(N)) ⇒ T(N) = Θ(N^(log_b(a)) · log^(k+1)(N))\nCase 3: f(N) = Ω(N^(log_b(a) + ε)) ⇒ T(N) = Θ(f(N))"}
+                        ]
+                    },
+                    {
+                        "page_num": 2,
+                        "page_title": "Sorting Algorithms Comprehensive Matrix",
+                        "sections": [
+                            {"type": "heading", "text": "2. Time, Space & Stability Comparison"},
+                            {"type": "ascii_diagram", "title": "Sorting Complexity Grid", "content": "+---------------+------------+------------+------------+-----------+----------+\n| Algorithm     | Best Time  | Avg Time   | Worst Time | Space     | Stable?  |\n+---------------+------------+------------+------------+-----------+----------+\n| Quick Sort    | O(N log N) | O(N log N) | O(N²)      | O(log N)  | No       |\n| Merge Sort    | O(N log N) | O(N log N) | O(N log N) | O(N)      | Yes      |\n| Heap Sort     | O(N log N) | O(N log N) | O(N log N) | O(1)      | No       |\n| TimSort       | O(N)       | O(N log N) | O(N log N) | O(N)      | Yes      |\n| Radix Sort    | O(N · k)   | O(N · k)   | O(N · k)   | O(N + k)  | Yes      |\n+---------------+------------+------------+------------+-----------+----------+"}
+                        ]
+                    },
+                    {
+                        "page_num": 3,
+                        "page_title": "Graph Algorithms Decision Flowchart",
+                        "sections": [
+                            {"type": "heading", "text": "3. Optimal Graph Paradigm Selection"},
+                            {"type": "paragraph", "text": "• Unweighted Shortest Path: BFS — O(V + E) runtime.\n• Non-negative Weights: Dijkstra with Binary Min-Heap — O((V + E) log V).\n• Negative Edge Weights: Bellman-Ford — O(V · E), detects negative cycles.\n• All-Pairs Shortest Path: Floyd-Warshall — O(V³) dynamic programming.\n• Minimum Spanning Tree: Kruskal (Disjoint Set Union) or Prim (Priority Queue) — O(E log V)."}
+                        ]
+                    }
+                ]),
+                now_iso
+            ),
+            (
+                "doc-ml-math",
+                "course-ml",
+                None,
+                "Mathematics for Deep Learning: Backprop & Tensor Gradients.pdf",
+                "Mathematical derivations of reverse-mode automatic differentiation, Jacobian vector products, and Adam optimizer moments.",
+                "Mathematical Notes",
+                "Prof. Rajesh Sharma",
+                "2.5 MB",
+                3,
+                "disabled",
+                1,
+                1,
+                1,
+                json.dumps([
+                    {
+                        "page_num": 1,
+                        "page_title": "Matrix Calculus & Tensor Gradients",
+                        "sections": [
+                            {"type": "heading", "text": "1. Vectorized Derivative Conventions"},
+                            {"type": "paragraph", "text": "In deep neural networks, gradients are computed with respect to multidimensional tensors. Using numerator layout convention, the derivative of scalar loss L with respect to weight matrix W ∈ ℝ^(m × n) preserves dimensions: ∂L/∂W ∈ ℝ^(m × n)."},
+                            {"type": "formula_card", "title": "Linear Layer Gradient", "formula": "Y = X·W + B  ⇒  ∂L/∂W = Xᵀ · (∂L/∂Y)  and  ∂L/∂X = (∂L/∂Y) · Wᵀ"}
+                        ]
+                    },
+                    {
+                        "page_num": 2,
+                        "page_title": "Backpropagation Computational Graph",
+                        "sections": [
+                            {"type": "heading", "text": "2. Reverse-Mode Automatic Differentiation"},
+                            {"type": "paragraph", "text": "Reverse-mode AD traverses the computational directed acyclic graph (DAG) backwards from the scalar loss. For an operation z = f(x, y), adjoints accumulate via the multivariate chain rule: λ_x = λ_z · (∂f/∂x)."}
+                        ]
+                    },
+                    {
+                        "page_num": 3,
+                        "page_title": "Adaptive Moment Estimation (Adam) Mechanics",
+                        "sections": [
+                            {"type": "heading", "text": "3. First and Second Moment Estimates"},
+                            {"type": "formula_card", "title": "Adam Update Rules", "formula": "m_t = β₁·m_(t-1) + (1-β₁)·g_t  |  v_t = β₂·v_(t-1) + (1-β₂)·g_t²\nm̂_t = m_t / (1 - β₁ᵗ)          |  v̂_t = v_t / (1 - β₂ᵗ)\nθ_t = θ_(t-1) - η · m̂_t / (√(v̂_t) + ε)"}
+                        ]
+                    }
+                ]),
+                now_iso
+            ),
+            (
+                "doc-sec-crypt",
+                "course-sec",
+                None,
+                "Zero-Trust Content Cryptography & Dynamic Watermarking.pdf",
+                "Cryptographic security whitepaper detailing in-platform AES-GCM vaulting, anti-tamper canvas isolation, and forensic steganography.",
+                "Security Whitepaper",
+                "Prof. Rajesh Sharma",
+                "2.9 MB",
+                3,
+                "in_app_only",
+                1,
+                1,
+                1,
+                json.dumps([
+                    {
+                        "page_num": 1,
+                        "page_title": "Zero-Trust Educational DRM Principles",
+                        "sections": [
+                            {"type": "heading", "text": "1. The Piracy Vulnerability Surface"},
+                            {"type": "paragraph", "text": "Traditional LMS platforms expose direct download links to static PDF files. Once saved to student hard drives, content is leaked to external messaging channels within minutes. EduVault replaces static files with an In-Platform Ephemeral Memory Reader, streaming encrypted chunks into an isolated virtual canvas."}
+                        ]
+                    },
+                    {
+                        "page_num": 2,
+                        "page_title": "Dynamic Forensic Watermarking Architecture",
+                        "sections": [
+                            {"type": "heading", "text": "2. User-Specific Identity Embeddings"},
+                            {"type": "paragraph", "text": "Every document session overlays an animated, semi-transparent forensic watermark containing the student's authenticated email, IP address, and cryptographic session ID. Even high-resolution external smartphone camera recordings can be traced back to the exact student account with mathematical certainty."}
+                        ]
+                    },
+                    {
+                        "page_num": 3,
+                        "page_title": "Anti-Screen Capture Heuristics",
+                        "sections": [
+                            {"type": "heading", "text": "3. OS Window Defocus & Blur Protection"},
+                            {"type": "paragraph", "text": "When the browser window loses focus or when screen capture utilities initiate capture hooks, EduVault triggers an instantaneous Gaussian blur conceal shield (filter: blur(25px)), blanking out all intellectual property before frames can be captured."}
+                        ]
+                    }
+                ]),
+                now_iso
+            )
+        ]
+        cursor.executemany("""
+        INSERT INTO study_materials (id, course_id, module_id, title, description, category, instructor, file_size, pages_count, download_policy, watermark_enabled, anti_copy_enabled, offline_available, content_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, materials)
 
 
 

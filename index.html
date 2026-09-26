@@ -2940,6 +2940,164 @@ If BF > 1 or BF < -1, rotation needed!</code></pre>
         </div>
     </div>
 
+    <!-- ========== SECURE STUDY MATERIALS & PDF READER MODAL ========== -->
+    <div class="secure-reader-modal hidden" id="modal-secure-pdf-reader">
+        <!-- Reader Header Toolbar -->
+        <div class="secure-reader-header">
+            <div class="reader-title-group">
+                <div class="reader-doc-icon">
+                    <i class="fas fa-file-pdf"></i>
+                </div>
+                <div class="reader-title-text">
+                    <h3 id="reader-doc-title">
+                        <span>Lecture Notes Document</span>
+                    </h3>
+                    <div class="reader-meta-pills">
+                        <span class="reader-pill category" id="reader-doc-category">Lecture Notes</span>
+                        <span class="reader-pill drm"><i class="fas fa-shield-alt"></i> DRM Encrypted</span>
+                        <span class="reader-pill policy" id="reader-policy-pill"><i class="fas fa-lock"></i> In-App Vault Only</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="reader-controls-group">
+                <!-- Page Navigation -->
+                <div class="reader-btn-group">
+                    <button class="reader-tool-btn" id="reader-btn-prev" onclick="readerPrevPage()" title="Previous Page">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    <div class="reader-page-indicator">
+                        <span id="reader-cur-page">1</span>&nbsp;/&nbsp;<span id="reader-total-pages">4</span>
+                    </div>
+                    <button class="reader-tool-btn" id="reader-btn-next" onclick="readerNextPage()" title="Next Page">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+
+                <!-- Zoom Controls -->
+                <div class="reader-btn-group">
+                    <button class="reader-tool-btn" onclick="readerZoomOut()" title="Zoom Out"><i class="fas fa-search-minus"></i></button>
+                    <button class="reader-tool-btn" id="reader-zoom-label" onclick="readerZoomReset()" title="Reset Zoom">100%</button>
+                    <button class="reader-tool-btn" onclick="readerZoomIn()" title="Zoom In"><i class="fas fa-search-plus"></i></button>
+                    <button class="reader-tool-btn" onclick="readerZoomFitWidth()" title="Fit Width"><i class="fas fa-arrows-alt-h"></i></button>
+                </div>
+
+                <!-- Theme Toggle Button -->
+                <button class="btn btn-sm btn-ghost" onclick="toggleReaderTheme()" title="Switch Reading Theme (Dark / Sepia / Light / Contrast)" id="reader-theme-btn" style="border: 1px solid var(--border);">
+                    <i class="fas fa-palette"></i> <span id="reader-theme-label">Dark</span>
+                </button>
+
+                <!-- Instructor DRM Policy Config Button -->
+                <button class="btn btn-sm btn-outline hidden" id="reader-teacher-policy-btn" onclick="openMaterialPolicyModal()" title="Configure DRM Policy" style="border: 1px solid var(--accent-primary); color: var(--accent-primary);">
+                    <i class="fas fa-shield-alt"></i> <span>DRM Policy</span>
+                </button>
+
+                <!-- Offline Save / Download Action Button -->
+                <button class="btn btn-sm btn-primary" id="reader-download-btn" onclick="handleReaderDownload()" style="box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);">
+                    <i class="fas fa-cloud-download-alt"></i> <span id="reader-download-btn-text">Offline Vault</span>
+                </button>
+
+                <!-- Close Reader -->
+                <button class="btn btn-sm btn-ghost" onclick="closeSecureReader()" title="Close Document Viewer" style="font-size: 1.1rem; padding: 6px 12px;">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Reader Main Layout -->
+        <div class="secure-reader-main">
+            <!-- Sidebar with Thumbnails -->
+            <div class="secure-reader-sidebar" id="reader-thumbnails-sidebar">
+                <div class="reader-sidebar-title">
+                    <i class="fas fa-th-large"></i> Document Pages
+                </div>
+                <div id="reader-thumbnails-list" style="display: flex; flex-direction: column; gap: 10px;">
+                    <!-- Dynamically populated page thumbnails -->
+                </div>
+            </div>
+
+            <!-- Viewport & Rendered Page Canvas -->
+            <div class="secure-reader-viewport" id="reader-viewport" oncontextmenu="return false;">
+                <!-- Anti-Screenshot Conceal Blur Shield -->
+                <div class="secure-reader-blur-shield hidden" id="reader-blur-shield">
+                    <div class="blur-shield-content">
+                        <div class="shield-icon-pulse">
+                            <i class="fas fa-shield-halved"></i>
+                        </div>
+                        <h2 style="margin-bottom: 8px; font-size: 1.4rem;">Screen Capture Shield Active</h2>
+                        <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 16px;">
+                            EduVault Anti-Tamper DRM has concealed this study material because the window lost focus or a screenshot utility was detected.
+                        </p>
+                        <span style="font-size: 0.8rem; color: #10b981; background: rgba(16, 185, 129, 0.15); padding: 4px 12px; border-radius: 20px;">
+                            <i class="fas fa-eye"></i> Click inside the viewer to resume reading
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Page Container -->
+                <div class="secure-reader-page theme-dark" id="reader-active-page">
+                    <!-- Dynamic Forensic Watermark Layer -->
+                    <div class="secure-reader-watermark-overlay" id="reader-watermark-overlay">
+                        <!-- Dynamically filled with forensic watermark items -->
+                    </div>
+
+                    <!-- Page Header Stamp -->
+                    <div class="reader-page-header">
+                        <span class="course-name" id="page-header-course">Advanced Data Structures & Algorithms</span>
+                        <span style="font-family: var(--font-mono); font-size: 0.76rem;" id="page-header-stamp">EduVault Secure Document Vault</span>
+                        <span id="page-header-number">Page 1 of 4</span>
+                    </div>
+
+                    <!-- Page Title -->
+                    <h1 class="reader-page-title" id="page-content-title">Lecture Overview</h1>
+
+                    <!-- Dynamic Page Content -->
+                    <div id="page-content-body">
+                        <!-- Populated dynamically by renderReaderPage() -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+ 
+    <!-- ========== MATERIAL DRM POLICY CONFIGURATION MODAL (TEACHER) ========== -->
+    <div class="modal-overlay hidden" id="modal-material-policy" style="z-index: 200000;">
+        <div class="modal" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3><i class="fas fa-shield-alt text-indigo"></i> Document DRM & Access Policy</h3>
+                <button class="modal-close" onclick="closeMaterialPolicyModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 16px; padding: 20px;">
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 6px; display: block; font-size: 0.88rem;">Document Title</label>
+                    <input type="text" id="policy-material-title" class="form-control" readonly style="opacity: 0.85; background: rgba(0,0,0,0.25); font-weight: 600;">
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 6px; display: block; font-size: 0.88rem;">Download & Vault Storage Policy</label>
+                    <select id="policy-download-select" class="form-control" style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border);">
+                        <option value="in_app_only">In-App Offline Vault Only (Encrypted Local Storage)</option>
+                        <option value="disabled">Strictly Disabled (Streaming View Only, Zero Downloads)</option>
+                        <option value="allowed">Institutional Export Allowed (With Forensic Watermark)</option>
+                    </select>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 14px; margin-top: 6px; background: rgba(255,255,255,0.02); padding: 14px; border-radius: var(--radius-md); border: 1px solid var(--border);">
+                    <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="policy-watermark-checkbox" checked style="width: 18px; height: 18px; margin-top: 2px; accent-color: var(--accent-primary);">
+                        <span><strong style="color: var(--text-primary); font-size: 0.9rem;">Dynamic Forensic Watermarking</strong><br><small style="color: var(--text-muted); font-size: 0.78rem;">Embeds recipient student identity, IP address, and anti-leak timestamp across viewport</small></span>
+                    </label>
+                    <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="policy-anticopy-checkbox" checked style="width: 18px; height: 18px; margin-top: 2px; accent-color: var(--accent-primary);">
+                        <span><strong style="color: var(--text-primary); font-size: 0.9rem;">Anti-Copy & Clipboard Concealment</strong><br><small style="color: var(--text-muted); font-size: 0.78rem;">Blocks raw text copying, printing shortcuts (Ctrl+P), and PrintScreen capture utilities</small></span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; padding: 16px 20px; border-top: 1px solid var(--border);">
+                <button class="btn btn-ghost" onclick="closeMaterialPolicyModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="saveMaterialPolicyChanges()"><i class="fas fa-save"></i> Save Policy</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ========== TOAST NOTIFICATIONS ========== -->
     <div class="toast-container" id="toast-container"></div>
 

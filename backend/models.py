@@ -193,4 +193,33 @@ class CurriculumReorderRequest(BaseModel):
     modules: Optional[List[ReorderModule]] = None
     items: Optional[List[ReorderItem]] = None
 
+# Study Materials & Secure Document Models
+class StudyMaterialCreate(BaseModel):
+    id: Optional[str] = None
+    course_id: str
+    module_id: Optional[int] = None
+    title: str
+    description: Optional[str] = None
+    category: Optional[str] = "Lecture Notes"
+    instructor: Optional[str] = "Prof. Rajesh Sharma"
+    file_size: Optional[str] = "2.4 MB"
+    pages_count: Optional[int] = 4
+    download_policy: Optional[str] = "in_app_only"
+    watermark_enabled: Optional[bool] = True
+    anti_copy_enabled: Optional[bool] = True
+    offline_available: Optional[bool] = True
+    content_json: Optional[str] = None
+
+class StudyMaterialPolicyUpdate(BaseModel):
+    download_policy: Optional[str] = None
+    watermark_enabled: Optional[bool] = None
+    anti_copy_enabled: Optional[bool] = None
+
+class MaterialAccessLogCreate(BaseModel):
+    student_email: Optional[str] = "student@eduvault.io"
+    student_name: Optional[str] = "Student"
+    ip_address: Optional[str] = "127.0.0.1"
+    device_fingerprint: Optional[str] = None
+    pages_viewed: Optional[int] = 1
+
 
