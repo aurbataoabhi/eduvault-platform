@@ -472,6 +472,36 @@ def init_db():
     );
     """)
 
+    # 17. Curriculum Modules / Topics Table (Hierarchical Curricula & Playlists)
+    cursor.execute(f"""
+    CREATE TABLE IF NOT EXISTS curriculum_modules (
+        id {id_primary_key},
+        course_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 1,
+        description TEXT,
+        is_expanded INTEGER DEFAULT 1,
+        created_at TEXT NOT NULL
+    );
+    """)
+
+    # 18. Curriculum Items / Lectures / Materials Table
+    cursor.execute(f"""
+    CREATE TABLE IF NOT EXISTS curriculum_items (
+        id {id_primary_key},
+        module_id INTEGER NOT NULL,
+        course_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        item_type TEXT NOT NULL DEFAULT 'video',
+        duration_or_size TEXT DEFAULT '30:00',
+        content_ref TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 1,
+        is_completed INTEGER DEFAULT 0,
+        is_locked INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL
+    );
+    """)
+
     conn.commit()
 
     # Automated migration for existing student_enrollments schema
@@ -649,6 +679,64 @@ def seed_additional_tables(cursor):
         INSERT INTO stream_settings (user_id, server_url, stream_key, youtube_rtmp_url, youtube_stream_key, simulcast_enabled, resolution, video_bitrate, audio_bitrate, status, ingest_fps, ingest_bitrate_kbps, dropped_frames, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, ('teacher_1', 'rtmp://live.eduvault.io:1935/live', 'edv_live_sec_7a8f9021e89b4f1c', 'rtmp://a.rtmp.youtube.com/live2', 'yt_live_eduvault_88321', 1, '1080p60', '4500 kbps', '160 kbps', 'ready', 60, 4500, 0, now_iso))
+
+    cursor.execute("SELECT COUNT(*) FROM curriculum_modules")
+    if cursor.fetchone()[0] == 0:
+        # Modules for course-dsa
+        modules = [
+            ("course-dsa", "Module 1: Arrays & Strings", 1, "Array operations, two-pointer technique, sliding window, string algorithms", 1, now_iso),
+            ("course-dsa", "Module 2: Linked Lists", 2, "Singly & Doubly linked lists, cycle detection, pointer manipulations", 1, now_iso),
+            ("course-dsa", "Module 3: Binary Trees & BST", 3, "Hierarchical trees, recursive traversals, self-balancing search trees", 1, now_iso),
+            ("course-dsa", "Module 4: Graphs & Dynamic Programming", 4, "BFS/DFS, Dijkstra, memoization and tabulation optimization", 0, now_iso)
+        ]
+        cursor.executemany("""
+        INSERT INTO curriculum_modules (course_id, title, sort_order, description, is_expanded, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """, modules)
+
+        # Retrieve generated module IDs
+        cursor.execute("SELECT id, sort_order FROM curriculum_modules WHERE course_id = 'course-dsa' ORDER BY sort_order ASC")
+        mod_rows = cursor.fetchall()
+        mod_ids = {row[1]: row[0] for row in mod_rows}
+
+        m1_id = mod_ids.get(1, 1)
+        m2_id = mod_ids.get(2, 2)
+        m3_id = mod_ids.get(3, 3)
+        m4_id = mod_ids.get(4, 4)
+
+        items = [
+            # Module 1
+            (m1_id, "course-dsa", "1.1 Introduction to Arrays & Memory Layout", "video", "32:15", "rec-dsa-bt-live", 1, 1, 0, now_iso),
+            (m1_id, "course-dsa", "1.2 Array Operations & In-Place Reversals", "video", "45:30", "rec-dsa-bt-live", 2, 1, 0, now_iso),
+            (m1_id, "course-dsa", "1.3 Two-Pointer Technique & Sliding Window", "video", "38:40", "rec-dsa-bt-live", 3, 1, 0, now_iso),
+            (m1_id, "course-dsa", "1.4 String Matching & Substrings", "video", "28:10", "rec-dsa-bt-live", 4, 1, 0, now_iso),
+            (m1_id, "course-dsa", "1.5 Practice Problems Sheet.pdf", "pdf", "2.4 MB", "doc-arrays-pdf", 5, 1, 0, now_iso),
+            (m1_id, "course-dsa", "1.6 Quiz: Arrays & Strings Mastery", "quiz", "10 Qs • 15m", "quiz-trees", 6, 1, 0, now_iso),
+
+            # Module 2
+            (m2_id, "course-dsa", "2.1 Singly Linked Lists & Reversals", "video", "41:20", "rec-dsa-bt-live", 1, 1, 0, now_iso),
+            (m2_id, "course-dsa", "2.2 Doubly Linked Lists & Sentinel Nodes", "video", "35:10", "rec-dsa-bt-live", 2, 1, 0, now_iso),
+            (m2_id, "course-dsa", "2.3 Floyd's Cycle-Finding Algorithm", "video", "29:45", "rec-dsa-bt-live", 3, 1, 0, now_iso),
+            (m2_id, "course-dsa", "2.4 Linked Lists Coding Lab", "exercise", "4 Challenges", "lab-ll", 4, 0, 0, now_iso),
+
+            # Module 3
+            (m3_id, "course-dsa", "3.1 Binary Tree Foundations & Node Pointers", "video", "50:15", "rec-dsa-bt-live", 1, 1, 0, now_iso),
+            (m3_id, "course-dsa", "3.2 Tree Traversals (Inorder, Preorder, Postorder)", "video", "44:00", "rec-dsa-bt-live", 2, 1, 0, now_iso),
+            (m3_id, "course-dsa", "3.3 Binary Search Trees (BST) Insertion & Deletion", "video", "48:30", "rec-dsa-bt-live", 3, 0, 0, now_iso),
+            (m3_id, "course-dsa", "3.4 Self-Balancing AVL & Red-Black Trees", "video", "52:10", "rec-dsa-bt-live", 4, 0, 0, now_iso),
+            (m3_id, "course-dsa", "3.5 Binary Trees & BST Mastery Quiz", "quiz", "10 Qs • 30m", "quiz-trees", 5, 0, 0, now_iso),
+
+            # Module 4
+            (m4_id, "course-dsa", "4.1 Graph Representations & Adjacency Lists", "video", "36:00", "rec-dsa-bt-live", 1, 0, 1, now_iso),
+            (m4_id, "course-dsa", "4.2 BFS & DFS Traversal Patterns", "video", "42:15", "rec-dsa-bt-live", 2, 0, 1, now_iso),
+            (m4_id, "course-dsa", "4.3 Memoization vs Tabulation Foundations", "video", "55:00", "rec-dsa-bt-live", 3, 0, 1, now_iso),
+            (m4_id, "course-dsa", "4.4 Dijkstra's Shortest Path Algorithm", "video", "47:20", "rec-dsa-bt-live", 4, 0, 1, now_iso)
+        ]
+        cursor.executemany("""
+        INSERT INTO curriculum_items (module_id, course_id, title, item_type, duration_or_size, content_ref, sort_order, is_completed, is_locked, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, items)
+
 
 
 

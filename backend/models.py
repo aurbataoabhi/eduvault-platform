@@ -164,3 +164,33 @@ class SimulcastToggleRequest(BaseModel):
     enabled: bool
     youtube_stream_key: Optional[str] = None
 
+# Curriculum & Arranger Models
+class CurriculumModuleCreate(BaseModel):
+    title: str
+    course_id: Optional[str] = None
+    description: Optional[str] = None
+    sort_order: Optional[int] = None
+
+class CurriculumItemCreate(BaseModel):
+    title: str
+    course_id: Optional[str] = None
+    module_id: Optional[int] = None
+    item_type: str = "video" # 'video', 'pdf', 'quiz', 'exercise'
+    duration_or_size: Optional[str] = "30:00"
+    content_ref: Optional[str] = None
+    sort_order: Optional[int] = None
+
+class ReorderItem(BaseModel):
+    id: int
+    sort_order: int
+
+class ReorderModule(BaseModel):
+    id: int
+    sort_order: int
+    items: Optional[List[ReorderItem]] = None
+
+class CurriculumReorderRequest(BaseModel):
+    modules: Optional[List[ReorderModule]] = None
+    items: Optional[List[ReorderItem]] = None
+
+

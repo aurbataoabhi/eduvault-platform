@@ -30,7 +30,10 @@ from models import (
     RecordingDRMPolicyUpdate,
     WhiteboardStrokeCreate,
     StreamSettingsUpdate,
-    SimulcastToggleRequest
+    SimulcastToggleRequest,
+    CurriculumModuleCreate,
+    CurriculumItemCreate,
+    CurriculumReorderRequest
 )
 from ai_service import generate_ai_catchup_summary, answer_student_doubt
 
@@ -275,6 +278,146 @@ def create_course(req: CourseCreate):
     conn.commit()
     conn.close()
     return {"status": "created", "id": course_id, "title": req.title}
+
+
+# =====================================================================
+# HIERARCHICAL CURRICULUM, MULTI-TOPIC PLAYLISTS & DRAG-AND-DROP ENGINE
+# =====================================================================
+@app.get("/api/courses/{course_id}/curriculum")
+def get_course_curriculum(course_id: str):
+    conn = get_db()
+    cursor = conn.cursor()
+    # Fetch modules in order
+    cursor.execute("""
+        SELECT * FROM curriculum_modules 
+        WHERE course_id = ? 
+        ORDER BY sort_order ASC, id ASC
+    """, (course_id,))
+    modules = [dict(r) for r in cursor.fetchall()]
+
+    for mod in modules:
+        cursor.execute("""
+            SELECT * FROM curriculum_items 
+            WHERE module_id = ? 
+            ORDER BY sort_order ASC, id ASC
+        """, (mod["id"],))
+        mod["items"] = [dict(r) for r in cursor.fetchall()]
+
+    conn.close()
+    return modules
+
+@app.get("/api/curriculum/tree")
+def get_curriculum_tree():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM courses ORDER BY id ASC")
+    courses = [dict(r) for r in cursor.fetchall()]
+
+    for course in courses:
+        c_id = course["id"]
+        cursor.execute("SELECT * FROM curriculum_modules WHERE course_id = ? ORDER BY sort_order ASC", (c_id,))
+        modules = [dict(m) for m in cursor.fetchall()]
+        for mod in modules:
+            cursor.execute("SELECT * FROM curriculum_items WHERE module_id = ? ORDER BY sort_order ASC", (mod["id"],))
+            mod["items"] = [dict(it) for it in cursor.fetchall()]
+        course["modules"] = modules
+
+    conn.close()
+    return courses
+
+@app.post("/api/courses/{course_id}/modules")
+def create_curriculum_module(course_id: str, req: CurriculumModuleCreate):
+    conn = get_db()
+    cursor = conn.cursor()
+    now_iso = datetime.now().isoformat()
+    sort_order = req.sort_order
+    if sort_order is None:
+        cursor.execute("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM curriculum_modules WHERE course_id = ?", (course_id,))
+        sort_order = cursor.fetchone()[0]
+
+    cursor.execute("""
+        INSERT INTO curriculum_modules (course_id, title, sort_order, description, is_expanded, created_at)
+        VALUES (?, ?, ?, ?, 1, ?)
+    """, (course_id, req.title, sort_order, req.description or "", now_iso))
+    module_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return {
+        "status": "created",
+        "id": module_id,
+        "course_id": course_id,
+        "title": req.title,
+        "sort_order": sort_order
+    }
+
+@app.delete("/api/modules/{module_id}")
+def delete_curriculum_module(module_id: int):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM curriculum_items WHERE module_id = ?", (module_id,))
+    cursor.execute("DELETE FROM curriculum_modules WHERE id = ?", (module_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted", "id": module_id}
+
+@app.post("/api/modules/{module_id}/items")
+def create_curriculum_item(module_id: int, req: CurriculumItemCreate):
+    conn = get_db()
+    cursor = conn.cursor()
+    now_iso = datetime.now().isoformat()
+    sort_order = req.sort_order
+    if sort_order is None:
+        cursor.execute("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM curriculum_items WHERE module_id = ?", (module_id,))
+        sort_order = cursor.fetchone()[0]
+
+    course_id = req.course_id
+    if not course_id:
+        cursor.execute("SELECT course_id FROM curriculum_modules WHERE id = ?", (module_id,))
+        row = cursor.fetchone()
+        course_id = row[0] if row else "course-dsa"
+
+    cursor.execute("""
+        INSERT INTO curriculum_items (module_id, course_id, title, item_type, duration_or_size, content_ref, sort_order, is_completed, is_locked, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
+    """, (module_id, course_id, req.title, req.item_type, req.duration_or_size or "30:00", req.content_ref, sort_order, now_iso))
+    item_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return {
+        "status": "created",
+        "id": item_id,
+        "module_id": module_id,
+        "title": req.title,
+        "sort_order": sort_order
+    }
+
+@app.delete("/api/curriculum-items/{item_id}")
+def delete_curriculum_item(item_id: int):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM curriculum_items WHERE id = ?", (item_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted", "id": item_id}
+
+@app.post("/api/courses/{course_id}/curriculum/reorder")
+def reorder_curriculum(course_id: str, req: CurriculumReorderRequest):
+    conn = get_db()
+    cursor = conn.cursor()
+    if req.modules:
+        for mod in req.modules:
+            cursor.execute("UPDATE curriculum_modules SET sort_order = ? WHERE id = ? AND course_id = ?", (mod.sort_order, mod.id, course_id))
+            if mod.items:
+                for it in mod.items:
+                    cursor.execute("UPDATE curriculum_items SET sort_order = ?, module_id = ? WHERE id = ?", (it.sort_order, mod.id, it.id))
+    if req.items:
+        for it in req.items:
+            cursor.execute("UPDATE curriculum_items SET sort_order = ? WHERE id = ?", (it.sort_order, it.id))
+
+    conn.commit()
+    conn.close()
+    return {"status": "success", "message": "Curriculum order updated successfully"}
+
 
 # =====================================================================
 # ENROLLMENT KEYS & STUDENT ELIGIBILITY VERIFICATION SYSTEM

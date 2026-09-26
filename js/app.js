@@ -163,8 +163,14 @@ function navigateTo(page) {
         loadSchedulesData();
     }
 
-    if (page === 'course-view' || page === 'content-manager') {
+    if (page === 'content-manager') {
         loadCoursesData();
+        initContentManagerCurriculum();
+    }
+
+    if (page === 'course-view') {
+        loadCoursesData();
+        loadStudentCourseCurriculum();
     }
 
     if (page === 'leaderboard') {
@@ -1594,12 +1600,718 @@ async function uploadContent() {
     }
 }
 
-function createPlaylist() {
-    openUploadModal();
+// =====================================================================
+// FEATURE 6: HIERARCHICAL CURRICULA, MULTI-TOPIC PLAYLISTS & ARRANGER
+// =====================================================================
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+const CurriculumState = {
+    currentCourseId: 'course-dsa',
+    currentCourseTitle: 'Data Structures & Algorithms',
+    coursesTree: [],
+    modules: [],
+    draggedType: null, // 'module' | 'item'
+    draggedModuleId: null,
+    draggedItemId: null,
+    sourceModuleId: null,
+    isSyncing: false
+};
+
+// Generic Modal Helpers
+function openModal(id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('hidden');
+}
+
+function closeModal(id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+}
+
+function openAddSubjectModal() {
+    openModal('modal-add-subject');
 }
 
 function addSubject() {
-    openUploadModal();
+    openAddSubjectModal();
+}
+
+function createPlaylist() {
+    openAddTopicModal();
+}
+
+function openAddTopicModal(courseId = null) {
+    populateTopicCourseSelect(courseId || CurriculumState.currentCourseId);
+    openModal('modal-add-topic');
+}
+
+function openAddCurriculumItemModal(moduleId = null) {
+    populateCurriculumModuleSelect(moduleId);
+    openModal('modal-add-curriculum-item');
+}
+
+function populateTopicCourseSelect(selectedCourseId) {
+    const select = document.getElementById('topic-course-select');
+    if (!select) return;
+    if (!CurriculumState.coursesTree || CurriculumState.coursesTree.length === 0) {
+        select.innerHTML = `<option value="${CurriculumState.currentCourseId}">${escapeHtml(CurriculumState.currentCourseTitle)}</option>`;
+        return;
+    }
+    select.innerHTML = CurriculumState.coursesTree.map(c => 
+        `<option value="${c.id}" ${c.id === (selectedCourseId || CurriculumState.currentCourseId) ? 'selected' : ''}>${escapeHtml(c.title)}</option>`
+    ).join('');
+}
+
+function populateCurriculumModuleSelect(selectedModuleId) {
+    const select = document.getElementById('curriculum-item-module-select');
+    if (!select) return;
+    if (!CurriculumState.modules || CurriculumState.modules.length === 0) {
+        select.innerHTML = '<option value="">No topics found. Please create a topic first.</option>';
+        return;
+    }
+    select.innerHTML = CurriculumState.modules.map(m => 
+        `<option value="${m.id}" ${m.id === selectedModuleId ? 'selected' : ''}>${escapeHtml(m.title)}</option>`
+    ).join('');
+}
+
+// Modal Form Submissions
+async function handleAddSubjectSubmit() {
+    const title = document.getElementById('subject-title-input')?.value.trim();
+    const desc = document.getElementById('subject-desc-input')?.value.trim();
+    const instructor = document.getElementById('subject-instructor-input')?.value.trim() || 'Prof. Rajesh Sharma';
+    const category = document.getElementById('subject-category-input')?.value.trim() || 'Computer Science';
+
+    if (!title) {
+        showToast('Please enter a subject title', 'warning');
+        return;
+    }
+
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/courses`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title: title,
+                description: desc,
+                instructor: instructor,
+                category: category,
+                total_lectures: 0,
+                total_duration: '0h',
+                banner_gradient: 'linear-gradient(135deg, #6C5CE7, #a29bfe)'
+            })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            closeModal('modal-add-subject');
+            showToast(`Subject "${title}" created successfully!`, 'success');
+            await loadCurriculumTree();
+            await selectCourseForArranger(data.id, title);
+        } else {
+            showToast('Failed to create subject', 'danger');
+        }
+    } catch (e) {
+        console.error('Error creating subject:', e);
+        showToast('Network error while creating subject', 'danger');
+    }
+}
+
+async function handleAddTopicSubmit() {
+    const courseId = document.getElementById('topic-course-select')?.value || CurriculumState.currentCourseId;
+    const title = document.getElementById('topic-title-input')?.value.trim();
+    const desc = document.getElementById('topic-desc-input')?.value.trim();
+
+    if (!title) {
+        showToast('Please enter a topic title', 'warning');
+        return;
+    }
+
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/courses/${courseId}/modules`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title: title,
+                description: desc
+            })
+        });
+
+        if (res.ok) {
+            closeModal('modal-add-topic');
+            showToast(`Topic "${title}" added to curriculum!`, 'success');
+            await loadCurriculumTree();
+            await selectCourseForArranger(courseId);
+        } else {
+            showToast('Failed to create topic', 'danger');
+        }
+    } catch (e) {
+        console.error('Error creating topic:', e);
+        showToast('Network error while adding topic', 'danger');
+    }
+}
+
+async function handleAddCurriculumItemSubmit() {
+    const moduleId = document.getElementById('curriculum-item-module-select')?.value;
+    const title = document.getElementById('curriculum-item-title-input')?.value.trim();
+    const itemType = document.getElementById('curriculum-item-type-select')?.value || 'video';
+    const duration = document.getElementById('curriculum-item-duration-input')?.value.trim() || '30:00';
+
+    if (!moduleId) {
+        showToast('Please select a topic/module', 'warning');
+        return;
+    }
+    if (!title) {
+        showToast('Please enter an item title', 'warning');
+        return;
+    }
+
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/modules/${moduleId}/items`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                course_id: CurriculumState.currentCourseId,
+                title: title,
+                item_type: itemType,
+                duration_or_size: duration,
+                content_ref: 'rec-dsa-bt-live'
+            })
+        });
+
+        if (res.ok) {
+            closeModal('modal-add-curriculum-item');
+            showToast(`"${title}" added to playlist!`, 'success');
+            await selectCourseForArranger(CurriculumState.currentCourseId);
+            await loadCurriculumTree();
+        } else {
+            showToast('Failed to add item', 'danger');
+        }
+    } catch (e) {
+        console.error('Error adding curriculum item:', e);
+        showToast('Network error while adding curriculum item', 'danger');
+    }
+}
+
+// Tree and Arranger Core
+async function initContentManagerCurriculum() {
+    await loadCurriculumTree();
+    await selectCourseForArranger(CurriculumState.currentCourseId);
+}
+
+async function loadCurriculumTree() {
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/curriculum/tree`);
+        if (!res.ok) return;
+        CurriculumState.coursesTree = await res.json();
+        renderSubjectTree();
+    } catch (e) {
+        console.warn('Error loading curriculum tree:', e);
+    }
+}
+
+function renderSubjectTree() {
+    const treeContainer = document.getElementById('subject-tree');
+    if (!treeContainer) return;
+
+    if (!CurriculumState.coursesTree || CurriculumState.coursesTree.length === 0) {
+        treeContainer.innerHTML = `
+            <div style="padding: 1.5rem; text-align: center; color: var(--text-muted); font-size: 0.85rem;">
+                No subjects yet. Click "+ Subject" to create one.
+            </div>`;
+        return;
+    }
+
+    treeContainer.innerHTML = CurriculumState.coursesTree.map(c => {
+        const isCurrent = c.id === CurriculumState.currentCourseId;
+        const modules = c.modules || [];
+        const totalItems = modules.reduce((sum, m) => sum + (m.items ? m.items.length : 0), 0);
+
+        return `
+            <div class="tree-item ${isCurrent ? 'expanded active' : ''}" style="${isCurrent ? 'background: rgba(99, 102, 241, 0.08); border-radius: 6px;' : ''}">
+                <div class="tree-item-header" onclick="selectCourseForArranger('${c.id}', '${escapeHtml(c.title)}')" style="cursor: pointer;">
+                    <i class="fas ${isCurrent ? 'fa-chevron-down' : 'fa-chevron-right'}"></i>
+                    <i class="fas ${isCurrent ? 'fa-folder-open' : 'fa-folder'} text-yellow"></i>
+                    <span style="font-weight: ${isCurrent ? '600' : '400'}; color: ${isCurrent ? 'var(--accent-primary)' : 'var(--text-primary)'};">${escapeHtml(c.title)}</span>
+                    <span class="tree-count" title="${modules.length} topics, ${totalItems} items">${totalItems}</span>
+                </div>
+                <div class="tree-children ${isCurrent ? '' : 'hidden'}">
+                    ${modules.map(m => `
+                        <div class="tree-item expanded" style="margin-left: 12px;">
+                            <div class="tree-item-header" style="font-size: 0.84rem; padding: 4px 6px;">
+                                <i class="fas fa-layer-group text-muted" style="font-size: 0.8rem;"></i>
+                                <span style="color: var(--text-secondary);">${escapeHtml(m.title)}</span>
+                                <span class="tree-count" style="font-size: 0.7rem;">${m.items ? m.items.length : 0}</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function selectCourseForArranger(courseId, courseTitle = null) {
+    CurriculumState.currentCourseId = courseId;
+    if (courseTitle) {
+        CurriculumState.currentCourseTitle = courseTitle;
+    } else {
+        const found = CurriculumState.coursesTree.find(c => c.id === courseId);
+        if (found) CurriculumState.currentCourseTitle = found.title;
+    }
+
+    const titleEl = document.getElementById('arranger-selected-course-title');
+    if (titleEl) titleEl.textContent = CurriculumState.currentCourseTitle;
+
+    renderSubjectTree();
+
+    const arrangerView = document.getElementById('curriculum-arranger-view');
+    if (arrangerView) {
+        arrangerView.innerHTML = `
+            <div style="text-align: center; padding: 3rem; color: var(--text-muted);">
+                <i class="fas fa-spinner fa-spin fa-2x"></i>
+                <p style="margin-top: 10px;">Loading curriculum for ${escapeHtml(CurriculumState.currentCourseTitle)}...</p>
+            </div>`;
+    }
+
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/courses/${courseId}/curriculum`);
+        if (res.ok) {
+            CurriculumState.modules = await res.json();
+            renderCurriculumArranger();
+        } else {
+            if (arrangerView) {
+                arrangerView.innerHTML = `
+                    <div style="padding: 2rem; text-align: center; color: var(--text-muted);">
+                        Failed to load curriculum.
+                    </div>`;
+            }
+        }
+    } catch (e) {
+        console.error('Error fetching course curriculum:', e);
+    }
+}
+
+function renderCurriculumArranger() {
+    const container = document.getElementById('curriculum-arranger-view');
+    if (!container) return;
+
+    if (!CurriculumState.modules || CurriculumState.modules.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; padding: 3.5rem 1rem; border: 2px dashed rgba(255, 255, 255, 0.1); border-radius: var(--radius-lg); background: rgba(255, 255, 255, 0.01);">
+                <i class="fas fa-folder-open text-muted" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;"></i>
+                <h3 style="margin-bottom: 0.5rem;">No Topics in this Course Curriculum</h3>
+                <p style="color: var(--text-muted); max-width: 440px; margin: 0 auto 1.5rem; font-size: 0.9rem;">
+                    Organize your course by adding structured topics, modules, video lectures, practice PDFs, and quizzes.
+                </p>
+                <button class="btn btn-primary" onclick="openAddTopicModal()"><i class="fas fa-folder-plus"></i> Add First Topic / Module</button>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = CurriculumState.modules.map((m, mIdx) => {
+        const items = m.items || [];
+        return `
+            <div class="arranger-module-card" id="module-card-${m.id}" data-module-id="${m.id}" draggable="true"
+                 ondragstart="handleModuleDragStart(event, ${m.id})"
+                 ondragover="handleModuleDragOver(event)"
+                 ondrop="handleModuleDrop(event, ${m.id})"
+                 ondragend="handleModuleDragEnd(event)">
+                <div class="arranger-module-header">
+                    <div class="module-header-left">
+                        <span class="module-drag-handle" title="Drag to reorder module"><i class="fas fa-grip-vertical"></i></span>
+                        <h4 class="module-header-title">
+                            <i class="fas fa-layer-group text-indigo"></i>
+                            <span>${escapeHtml(m.title)}</span>
+                            <span class="module-count-badge">${items.length} ${items.length === 1 ? 'item' : 'items'}</span>
+                        </h4>
+                    </div>
+                    <div class="module-header-actions">
+                        <button class="btn-arranger-action" onclick="moveModule(${m.id}, -1)" title="Move Module Up" ${mIdx === 0 ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>
+                            <i class="fas fa-chevron-up"></i>
+                        </button>
+                        <button class="btn-arranger-action" onclick="moveModule(${m.id}, 1)" title="Move Module Down" ${mIdx === CurriculumState.modules.length - 1 ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>
+                            <i class="fas fa-chevron-down"></i>
+                        </button>
+                        <button class="btn-arranger-action" onclick="openAddCurriculumItemModal(${m.id})" title="Add Lecture / Item to this Topic" style="color: var(--accent-primary);">
+                            <i class="fas fa-plus"></i> Add Item
+                        </button>
+                        <button class="btn-arranger-action danger" onclick="deleteCurriculumModule(${m.id})" title="Delete Module">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="arranger-items-list" id="items-list-${m.id}" data-module-id="${m.id}"
+                     ondragover="handleItemDragOver(event)"
+                     ondrop="handleItemDropOnModule(event, ${m.id})">
+                    ${items.length === 0 ? `
+                        <div class="empty-module-placeholder">
+                            <i class="fas fa-plus-circle"></i> Drag lectures here, or click <strong>+ Add Item</strong> above.
+                        </div>
+                    ` : items.map((it, itIdx) => {
+                        const iconBadgeClass = it.item_type || 'video';
+                        let iconTag = '<i class="fas fa-play"></i>';
+                        if (iconBadgeClass === 'pdf') iconTag = '<i class="fas fa-file-pdf"></i>';
+                        else if (iconBadgeClass === 'quiz') iconTag = '<i class="fas fa-clipboard-check"></i>';
+                        else if (iconBadgeClass === 'exercise') iconTag = '<i class="fas fa-code"></i>';
+
+                        return `
+                            <div class="arranger-item" id="item-${it.id}" data-item-id="${it.id}" data-module-id="${m.id}" draggable="true"
+                                 ondragstart="handleItemDragStart(event, ${it.id}, ${m.id})"
+                                 ondragover="handleItemDragOver(event)"
+                                 ondrop="handleItemDrop(event, ${it.id}, ${m.id})"
+                                 ondragend="handleItemDragEnd(event)">
+                                <div class="item-left">
+                                    <span class="item-drag-handle" title="Drag to rearrange order"><i class="fas fa-grip-vertical"></i></span>
+                                    <div class="item-icon-badge ${iconBadgeClass}">${iconTag}</div>
+                                    <span class="item-title-text">${escapeHtml(it.title)}</span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span class="item-duration-pill">${escapeHtml(it.duration_or_size || '30:00')}</span>
+                                    <div class="item-actions">
+                                        <button class="btn-arranger-action" onclick="openRecordingPlayer('${it.content_ref || 'rec-dsa-bt-live'}')" title="Preview DRM Stream">
+                                            <i class="fas fa-play text-cyan"></i>
+                                        </button>
+                                        <button class="btn-arranger-action" onclick="moveItem(${it.id}, ${m.id}, -1)" title="Move Item Up" ${itIdx === 0 ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>
+                                            <i class="fas fa-arrow-up"></i>
+                                        </button>
+                                        <button class="btn-arranger-action" onclick="moveItem(${it.id}, ${m.id}, 1)" title="Move Item Down" ${itIdx === items.length - 1 ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>
+                                            <i class="fas fa-arrow-down"></i>
+                                        </button>
+                                        <button class="btn-arranger-action danger" onclick="deleteCurriculumItem(${it.id})" title="Delete Item">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Drag and Drop Logic: Modules
+function handleModuleDragStart(e, moduleId) {
+    if (CurriculumState.draggedType === 'item') return;
+    CurriculumState.draggedType = 'module';
+    CurriculumState.draggedModuleId = moduleId;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', `module:${moduleId}`);
+    e.currentTarget.classList.add('dragging');
+}
+
+function handleModuleDragOver(e) {
+    if (CurriculumState.draggedType !== 'module') return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+}
+
+function handleModuleDrop(e, targetModuleId) {
+    if (CurriculumState.draggedType !== 'module') return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const srcId = CurriculumState.draggedModuleId;
+    if (srcId === targetModuleId) return;
+
+    const srcIdx = CurriculumState.modules.findIndex(m => m.id === srcId);
+    const tgtIdx = CurriculumState.modules.findIndex(m => m.id === targetModuleId);
+
+    if (srcIdx !== -1 && tgtIdx !== -1) {
+        const [moved] = CurriculumState.modules.splice(srcIdx, 1);
+        CurriculumState.modules.splice(tgtIdx, 0, moved);
+        renderCurriculumArranger();
+        syncCurriculumOrder();
+    }
+}
+
+function handleModuleDragEnd(e) {
+    CurriculumState.draggedType = null;
+    CurriculumState.draggedModuleId = null;
+    document.querySelectorAll('.arranger-module-card.dragging').forEach(el => el.classList.remove('dragging'));
+}
+
+// Drag and Drop Logic: Items
+function handleItemDragStart(e, itemId, moduleId) {
+    e.stopPropagation();
+    CurriculumState.draggedType = 'item';
+    CurriculumState.draggedItemId = itemId;
+    CurriculumState.sourceModuleId = moduleId;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', `item:${itemId}:${moduleId}`);
+    e.currentTarget.classList.add('dragging');
+}
+
+function handleItemDragOver(e) {
+    if (CurriculumState.draggedType !== 'item') return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+}
+
+function handleItemDrop(e, targetItemId, targetModuleId) {
+    if (CurriculumState.draggedType !== 'item') return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const srcItemId = CurriculumState.draggedItemId;
+    const srcModId = CurriculumState.sourceModuleId;
+
+    if (srcItemId === targetItemId && srcModId === targetModuleId) return;
+
+    const srcMod = CurriculumState.modules.find(m => m.id === srcModId);
+    const tgtMod = CurriculumState.modules.find(m => m.id === targetModuleId);
+
+    if (!srcMod || !tgtMod) return;
+
+    const srcItemIdx = (srcMod.items || []).findIndex(it => it.id === srcItemId);
+    if (srcItemIdx === -1) return;
+
+    const [movedItem] = srcMod.items.splice(srcItemIdx, 1);
+    movedItem.module_id = targetModuleId;
+
+    const tgtItemIdx = (tgtMod.items || []).findIndex(it => it.id === targetItemId);
+    if (tgtItemIdx !== -1) {
+        tgtMod.items.splice(tgtItemIdx, 0, movedItem);
+    } else {
+        tgtMod.items.push(movedItem);
+    }
+
+    renderCurriculumArranger();
+    syncCurriculumOrder();
+}
+
+function handleItemDropOnModule(e, targetModuleId) {
+    if (CurriculumState.draggedType !== 'item') return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const srcItemId = CurriculumState.draggedItemId;
+    const srcModId = CurriculumState.sourceModuleId;
+
+    if (srcModId === targetModuleId) return;
+
+    const srcMod = CurriculumState.modules.find(m => m.id === srcModId);
+    const tgtMod = CurriculumState.modules.find(m => m.id === targetModuleId);
+    if (!srcMod || !tgtMod) return;
+
+    const srcItemIdx = (srcMod.items || []).findIndex(it => it.id === srcItemId);
+    if (srcItemIdx === -1) return;
+
+    const [movedItem] = srcMod.items.splice(srcItemIdx, 1);
+    movedItem.module_id = targetModuleId;
+    tgtMod.items = tgtMod.items || [];
+    tgtMod.items.push(movedItem);
+
+    renderCurriculumArranger();
+    syncCurriculumOrder();
+}
+
+function handleItemDragEnd(e) {
+    CurriculumState.draggedType = null;
+    CurriculumState.draggedItemId = null;
+    CurriculumState.sourceModuleId = null;
+    document.querySelectorAll('.arranger-item.dragging').forEach(el => el.classList.remove('dragging'));
+}
+
+// Move Up/Down Controls
+function moveModule(moduleId, direction) {
+    const idx = CurriculumState.modules.findIndex(m => m.id === moduleId);
+    if (idx === -1) return;
+    const newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= CurriculumState.modules.length) return;
+
+    const [moved] = CurriculumState.modules.splice(idx, 1);
+    CurriculumState.modules.splice(newIdx, 0, moved);
+    renderCurriculumArranger();
+    syncCurriculumOrder();
+}
+
+function moveItem(itemId, moduleId, direction) {
+    const mod = CurriculumState.modules.find(m => m.id === moduleId);
+    if (!mod || !mod.items) return;
+    const idx = mod.items.findIndex(it => it.id === itemId);
+    if (idx === -1) return;
+    const newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= mod.items.length) return;
+
+    const [moved] = mod.items.splice(idx, 1);
+    mod.items.splice(newIdx, 0, moved);
+    renderCurriculumArranger();
+    syncCurriculumOrder();
+}
+
+// Deletions
+async function deleteCurriculumModule(moduleId) {
+    const mod = CurriculumState.modules.find(m => m.id === moduleId);
+    const title = mod ? mod.title : 'this topic';
+    if (!confirm(`Are you sure you want to delete "${title}" and all its contents?`)) return;
+
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/modules/${moduleId}`, { method: 'DELETE' });
+        if (res.ok) {
+            CurriculumState.modules = CurriculumState.modules.filter(m => m.id !== moduleId);
+            renderCurriculumArranger();
+            await loadCurriculumTree();
+            showToast(`Deleted topic "${title}"`, 'info');
+        } else {
+            showToast('Failed to delete topic', 'danger');
+        }
+    } catch (e) {
+        console.error('Error deleting module:', e);
+        showToast('Network error while deleting topic', 'danger');
+    }
+}
+
+async function deleteCurriculumItem(itemId) {
+    if (!confirm('Are you sure you want to delete this lecture / item?')) return;
+
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/curriculum-items/${itemId}`, { method: 'DELETE' });
+        if (res.ok) {
+            CurriculumState.modules.forEach(m => {
+                if (m.items) m.items = m.items.filter(it => it.id !== itemId);
+            });
+            renderCurriculumArranger();
+            await loadCurriculumTree();
+            showToast('Item deleted successfully', 'info');
+        } else {
+            showToast('Failed to delete item', 'danger');
+        }
+    } catch (e) {
+        console.error('Error deleting curriculum item:', e);
+        showToast('Network error while deleting item', 'danger');
+    }
+}
+
+// Live Cloud PostgreSQL Sync
+async function syncCurriculumOrder() {
+    const syncStatusEl = document.getElementById('arranger-sync-status');
+    const syncTextEl = document.getElementById('arranger-sync-text');
+
+    if (syncStatusEl && syncTextEl) {
+        syncStatusEl.style.borderColor = 'rgba(234, 179, 8, 0.4)';
+        syncStatusEl.style.background = 'rgba(234, 179, 8, 0.1)';
+        syncStatusEl.style.color = '#eab308';
+        syncTextEl.textContent = 'Syncing to PostgreSQL Cloud...';
+    }
+
+    const payload = {
+        modules: CurriculumState.modules.map((m, mIdx) => ({
+            id: m.id,
+            sort_order: mIdx + 1,
+            items: (m.items || []).map((it, itIdx) => ({
+                id: it.id,
+                sort_order: itIdx + 1,
+                module_id: m.id
+            }))
+        }))
+    };
+
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/courses/${CurriculumState.currentCourseId}/curriculum/reorder`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            if (syncStatusEl && syncTextEl) {
+                syncStatusEl.style.borderColor = 'rgba(16, 185, 129, 0.25)';
+                syncStatusEl.style.background = 'rgba(16, 185, 129, 0.1)';
+                syncStatusEl.style.color = '#10b981';
+                syncTextEl.textContent = 'Cloud Synchronized';
+            }
+            showToast('Curriculum order saved to PostgreSQL Cloud', 'success');
+        } else {
+            throw new Error('Reorder API failed');
+        }
+    } catch (e) {
+        console.error('Sync error:', e);
+        if (syncStatusEl && syncTextEl) {
+            syncStatusEl.style.borderColor = 'rgba(244, 63, 94, 0.4)';
+            syncStatusEl.style.background = 'rgba(244, 63, 94, 0.1)';
+            syncStatusEl.style.color = '#f43f5e';
+            syncTextEl.textContent = 'Sync Error';
+        }
+        showToast('Failed to sync new order with database', 'danger');
+    }
+}
+
+// Student Course View Renderer
+async function loadStudentCourseCurriculum(courseId = 'course-dsa') {
+    const listContainer = document.getElementById('student-course-curriculum-list');
+    const statsEl = document.getElementById('student-curriculum-stats');
+    if (!listContainer) return;
+
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/courses/${courseId}/curriculum`);
+        if (!res.ok) return;
+        const modules = await res.json();
+
+        let totalItems = 0;
+        modules.forEach(m => totalItems += (m.items ? m.items.length : 0));
+        if (statsEl) statsEl.textContent = `${modules.length} topics • ${totalItems} lectures & resources`;
+
+        if (!modules || modules.length === 0) {
+            listContainer.innerHTML = '<div style="padding: 1.5rem; color: var(--text-muted); text-align: center;">Curriculum coming soon!</div>';
+            return;
+        }
+
+        listContainer.innerHTML = modules.map((m, mIdx) => {
+            const items = m.items || [];
+            const isFirst = mIdx === 0;
+            return `
+                <div class="curriculum-section ${isFirst ? 'expanded' : ''}">
+                    <div class="curriculum-section-header" onclick="toggleCurriculumSection(this)">
+                        <i class="fas ${isFirst ? 'fa-chevron-down' : 'fa-chevron-right'}"></i>
+                        <h4>${escapeHtml(m.title)}</h4>
+                        <span class="module-progress">${items.length} ${items.length === 1 ? 'item' : 'items'}</span>
+                    </div>
+                    <div class="curriculum-items ${isFirst ? '' : 'hidden'}">
+                        ${items.map(it => {
+                            const isVideo = it.item_type === 'video';
+                            let iconClass = 'fas fa-play-circle text-purple';
+                            let metaPrefix = 'Lecture';
+                            if (it.item_type === 'pdf') {
+                                iconClass = 'fas fa-file-pdf text-red';
+                                metaPrefix = 'Document';
+                            } else if (it.item_type === 'quiz') {
+                                iconClass = 'fas fa-clipboard-check text-green';
+                                metaPrefix = 'Assessment';
+                            } else if (it.item_type === 'exercise') {
+                                iconClass = 'fas fa-code text-cyan';
+                                metaPrefix = 'Coding';
+                            }
+
+                            return `
+                                <div class="curriculum-item ${isVideo ? 'completed' : ''}" style="cursor: pointer;"
+                                     onclick="${isVideo ? `openRecordingPlayer('${it.content_ref || 'rec-dsa-bt-live'}')` : `showToast('Launching ${escapeHtml(it.title)}...', 'info')`}">
+                                    <i class="${iconClass}"></i>
+                                    <div class="curriculum-item-info">
+                                        <span>${escapeHtml(it.title)}</span>
+                                        <span class="item-meta">${metaPrefix} • ${escapeHtml(it.duration_or_size || '30:00')}</span>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (e) {
+        console.warn('Error loading student course curriculum:', e);
+    }
 }
 
 // ========== COURSE VIEW ==========

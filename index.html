@@ -1211,177 +1211,47 @@
                 <div class="content-manager-layout">
                     <!-- Subject Tree Sidebar -->
                     <div class="content-tree">
-                        <h3><i class="fas fa-sitemap"></i> Subject Tree</h3>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <h3 style="margin: 0; font-size: 1.05rem;"><i class="fas fa-sitemap text-indigo"></i> Subject Tree</h3>
+                            <button class="btn btn-sm btn-ghost" onclick="openAddSubjectModal()" title="Add Subject / Course"><i class="fas fa-plus"></i></button>
+                        </div>
                         <div class="tree-container" id="subject-tree">
-                            <div class="tree-item expanded">
-                                <div class="tree-item-header" onclick="toggleTreeItem(this)">
-                                    <i class="fas fa-chevron-down"></i>
-                                    <i class="fas fa-folder-open text-yellow"></i>
-                                    <span>Data Structures & Algorithms</span>
-                                    <span class="tree-count">24</span>
-                                </div>
-                                <div class="tree-children">
-                                    <div class="tree-item expanded">
-                                        <div class="tree-item-header" onclick="toggleTreeItem(this)">
-                                            <i class="fas fa-chevron-down"></i>
-                                            <i class="fas fa-folder-open text-yellow"></i>
-                                            <span>Arrays & Strings</span>
-                                            <span class="tree-count">6</span>
-                                        </div>
-                                        <div class="tree-children">
-                                            <div class="tree-leaf"><i class="fas fa-play-circle text-purple"></i> Introduction to Arrays</div>
-                                            <div class="tree-leaf"><i class="fas fa-play-circle text-purple"></i> Array Operations</div>
-                                            <div class="tree-leaf"><i class="fas fa-play-circle text-purple"></i> String Manipulation</div>
-                                            <div class="tree-leaf"><i class="fas fa-file-pdf text-red"></i> Practice Problems.pdf</div>
-                                            <div class="tree-leaf"><i class="fas fa-clipboard-check text-green"></i> Quiz: Arrays Basics</div>
-                                            <div class="tree-leaf"><i class="fas fa-code text-cyan"></i> Coding Exercise</div>
-                                        </div>
-                                    </div>
-                                    <div class="tree-item">
-                                        <div class="tree-item-header" onclick="toggleTreeItem(this)">
-                                            <i class="fas fa-chevron-right"></i>
-                                            <i class="fas fa-folder text-yellow"></i>
-                                            <span>Linked Lists</span>
-                                            <span class="tree-count">5</span>
-                                        </div>
-                                        <div class="tree-children hidden"></div>
-                                    </div>
-                                    <div class="tree-item">
-                                        <div class="tree-item-header" onclick="toggleTreeItem(this)">
-                                            <i class="fas fa-chevron-right"></i>
-                                            <i class="fas fa-folder text-yellow"></i>
-                                            <span>Trees & Graphs</span>
-                                            <span class="tree-count">8</span>
-                                        </div>
-                                        <div class="tree-children hidden"></div>
-                                    </div>
-                                    <div class="tree-item">
-                                        <div class="tree-item-header" onclick="toggleTreeItem(this)">
-                                            <i class="fas fa-chevron-right"></i>
-                                            <i class="fas fa-folder text-yellow"></i>
-                                            <span>Sorting & Searching</span>
-                                            <span class="tree-count">5</span>
-                                        </div>
-                                        <div class="tree-children hidden"></div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="tree-item">
-                                <div class="tree-item-header" onclick="toggleTreeItem(this)">
-                                    <i class="fas fa-chevron-right"></i>
-                                    <i class="fas fa-folder text-yellow"></i>
-                                    <span>Machine Learning</span>
-                                    <span class="tree-count">18</span>
-                                </div>
-                                <div class="tree-children hidden"></div>
-                            </div>
-                            <div class="tree-item">
-                                <div class="tree-item-header" onclick="toggleTreeItem(this)">
-                                    <i class="fas fa-chevron-right"></i>
-                                    <i class="fas fa-folder text-yellow"></i>
-                                    <span>Web Development</span>
-                                    <span class="tree-count">30</span>
-                                </div>
-                                <div class="tree-children hidden"></div>
+                            <div style="text-align: center; padding: 1.5rem; color: var(--text-muted); font-size: 0.85rem;">
+                                <i class="fas fa-spinner fa-spin"></i> Loading subjects...
                             </div>
                         </div>
-                        <button class="btn btn-outline btn-full" style="margin-top: 1rem;" onclick="addSubject()">
-                            <i class="fas fa-plus"></i> Add Subject
-                        </button>
+                        <div style="display: flex; gap: 8px; margin-top: 1rem;">
+                            <button class="btn btn-primary btn-sm btn-full" onclick="openAddSubjectModal()">
+                                <i class="fas fa-folder-plus"></i> + Subject
+                            </button>
+                            <button class="btn btn-outline btn-sm btn-full" onclick="openAddTopicModal()">
+                                <i class="fas fa-layer-group"></i> + Topic
+                            </button>
+                        </div>
                     </div>
 
-                    <!-- Content Area -->
+                    <!-- Content Area: Hierarchical Curriculum Arranger Engine -->
                     <div class="content-area">
-                        <div class="content-toolbar">
+                        <div class="content-toolbar" style="flex-wrap: wrap; gap: 10px;">
                             <div class="content-breadcrumb">
-                                <span>DSA</span> <i class="fas fa-chevron-right"></i> <span>Arrays & Strings</span>
+                                <span id="arranger-selected-course-title" style="font-weight: 700; color: var(--accent-primary);">Data Structures & Algorithms</span> 
+                                <i class="fas fa-chevron-right" style="font-size: 0.8rem; margin: 0 6px; color: var(--text-muted);"></i> 
+                                <span style="color: var(--text-secondary); font-size: 0.9rem;">Curriculum Arranger & Multi-Topic Playlists</span>
                             </div>
-                            <div class="content-view-options">
-                                <button class="view-btn active" title="Grid View"><i class="fas fa-th"></i></button>
-                                <button class="view-btn" title="List View"><i class="fas fa-list"></i></button>
-                                <select class="sort-select">
-                                    <option>Sort by: Order</option>
-                                    <option>Sort by: Name</option>
-                                    <option>Sort by: Date</option>
-                                    <option>Sort by: Type</option>
-                                </select>
+                            <div style="display: flex; align-items: center; gap: 8px; margin-left: auto;">
+                                <div id="arranger-sync-status" style="font-size: 0.78rem; color: #10b981; display: flex; align-items: center; gap: 6px; padding: 5px 12px; background: rgba(16, 185, 129, 0.1); border-radius: 20px; border: 1px solid rgba(16, 185, 129, 0.25);">
+                                    <i class="fas fa-check-circle"></i> <span id="arranger-sync-text">Cloud Synchronized</span>
+                                </div>
+                                <button class="btn btn-sm btn-primary" onclick="openAddCurriculumItemModal()"><i class="fas fa-plus"></i> Add Lecture / Item</button>
+                                <button class="btn btn-sm btn-outline" onclick="openAddTopicModal()"><i class="fas fa-folder-plus"></i> Add Topic</button>
                             </div>
                         </div>
-                        <div class="content-grid" id="content-grid">
-                            <div class="content-item draggable" draggable="true">
-                                <div class="content-thumb video-thumb" style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')" title="Watch with Dynamic DRM Protection">
-                                    <i class="fas fa-play-circle fa-2x"></i>
-                                    <span class="content-duration">32:15</span>
-                                    <div class="drm-badge"><i class="fas fa-lock"></i> DRM</div>
-                                </div>
-                                <div class="content-meta">
-                                    <h4 style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')">Introduction to Arrays</h4>
-                                    <span class="content-meta-info">Video • 32:15 • HD 1080p</span>
-                                    <div class="content-actions">
-                                        <button class="btn-icon" title="Watch DRM Player" onclick="openRecordingPlayer('rec-dsa-bt-live')"><i class="fas fa-play text-cyan"></i></button>
-                                        <button class="btn-icon" title="Edit"><i class="fas fa-edit"></i></button>
-                                        <button class="btn-icon" title="Settings"><i class="fas fa-cog"></i></button>
-                                        <button class="btn-icon" title="Move"><i class="fas fa-arrows-alt"></i></button>
-                                        <button class="btn-icon text-red" title="Delete"><i class="fas fa-trash"></i></button>
-                                    </div>
-                                </div>
-                                <div class="content-drm-settings">
-                                    <label class="checkbox-label"><input type="checkbox" checked onchange="handleTeacherDownloadPolicyChange('rec-dsa-bt-live', this.checked ? 'in_app_only' : 'disabled')"> Allow download (in-app only)</label>
-                                    <label class="checkbox-label"><input type="checkbox" checked onchange="handleTeacherDRMToggle('rec-dsa-bt-live', this.checked)"> Watermark enabled</label>
-                                    <label class="checkbox-label"><input type="checkbox"> Allow browser access</label>
-                                </div>
-                            </div>
-                            <div class="content-item draggable" draggable="true">
-                                <div class="content-thumb video-thumb" style="background: linear-gradient(135deg, #a29bfe, #6C5CE7); cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')" title="Watch with Dynamic DRM Protection">
-                                    <i class="fas fa-play-circle fa-2x"></i>
-                                    <span class="content-duration">45:30</span>
-                                    <div class="drm-badge"><i class="fas fa-lock"></i> DRM</div>
-                                </div>
-                                <div class="content-meta">
-                                    <h4 style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')">Array Operations & Algorithms</h4>
-                                    <span class="content-meta-info">Video • 45:30 • HD 1080p</span>
-                                    <div class="content-actions">
-                                        <button class="btn-icon" title="Watch DRM Player" onclick="openRecordingPlayer('rec-dsa-bt-live')"><i class="fas fa-play text-cyan"></i></button>
-                                        <button class="btn-icon" title="Edit"><i class="fas fa-edit"></i></button>
-                                        <button class="btn-icon" title="Settings"><i class="fas fa-cog"></i></button>
-                                        <button class="btn-icon" title="Move"><i class="fas fa-arrows-alt"></i></button>
-                                        <button class="btn-icon text-red" title="Delete"><i class="fas fa-trash"></i></button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="content-item draggable" draggable="true">
-                                <div class="content-thumb doc-thumb">
-                                    <i class="fas fa-file-pdf fa-2x"></i>
-                                </div>
-                                <div class="content-meta">
-                                    <h4>Practice Problems</h4>
-                                    <span class="content-meta-info">PDF • 2.4 MB</span>
-                                    <div class="content-actions">
-                                        <button class="btn-icon" title="Edit"><i class="fas fa-edit"></i></button>
-                                        <button class="btn-icon text-red" title="Delete"><i class="fas fa-trash"></i></button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="content-item draggable" draggable="true">
-                                <div class="content-thumb quiz-thumb">
-                                    <i class="fas fa-clipboard-check fa-2x"></i>
-                                </div>
-                                <div class="content-meta">
-                                    <h4>Quiz: Arrays Basics</h4>
-                                    <span class="content-meta-info">Quiz • 10 questions • 15 min</span>
-                                    <div class="content-actions">
-                                        <button class="btn-icon" title="Edit"><i class="fas fa-edit"></i></button>
-                                        <button class="btn-icon" title="Results"><i class="fas fa-chart-bar"></i></button>
-                                        <button class="btn-icon text-red" title="Delete"><i class="fas fa-trash"></i></button>
-                                    </div>
-                                </div>
-                            </div>
-                            <!-- Add Content Card -->
-                            <div class="content-item add-content" onclick="openUploadModal()">
-                                <div class="add-content-inner">
-                                    <i class="fas fa-plus-circle fa-3x"></i>
-                                    <span>Add Content</span>
-                                </div>
+
+                        <!-- Arranger Container (Drag and Drop + Up/Down engine) -->
+                        <div id="curriculum-arranger-view" class="curriculum-arranger-container">
+                            <div style="text-align: center; padding: 3rem; color: var(--text-muted);">
+                                <i class="fas fa-spinner fa-spin fa-2x"></i>
+                                <p style="margin-top: 10px;">Loading course curriculum from Cloud PostgreSQL...</p>
                             </div>
                         </div>
                     </div>
@@ -1413,118 +1283,13 @@
                 <div class="course-content-layout">
                     <!-- Playlist / Curriculum -->
                     <div class="curriculum-panel">
-                        <h3><i class="fas fa-list-ol"></i> Curriculum</h3>
-                        <div class="curriculum-list">
-                            <div class="curriculum-section expanded">
-                                <div class="curriculum-section-header" onclick="toggleCurriculumSection(this)">
-                                    <i class="fas fa-chevron-down"></i>
-                                    <h4>Module 1: Arrays & Strings</h4>
-                                    <span class="module-progress">6/6 completed</span>
-                                </div>
-                                <div class="curriculum-items">
-                                    <div class="curriculum-item completed" style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')" title="Watch 1.1 with DRM Player">
-                                        <i class="fas fa-play-circle text-green"></i>
-                                        <div class="curriculum-item-info">
-                                            <span>1.1 Introduction to Arrays</span>
-                                            <span class="item-meta"><i class="fas fa-play-circle"></i> 32:15 • 1080p</span>
-                                        </div>
-                                    </div>
-                                    <div class="curriculum-item completed" style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')" title="Watch 1.2 with DRM Player">
-                                        <i class="fas fa-play-circle text-green"></i>
-                                        <div class="curriculum-item-info">
-                                            <span>1.2 Array Operations</span>
-                                            <span class="item-meta"><i class="fas fa-play-circle"></i> 45:30 • 1080p</span>
-                                        </div>
-                                    </div>
-                                    <div class="curriculum-item completed" style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')" title="Watch 1.3 with DRM Player">
-                                        <i class="fas fa-play-circle text-green"></i>
-                                        <div class="curriculum-item-info">
-                                            <span>1.3 String Manipulation</span>
-                                            <span class="item-meta"><i class="fas fa-play-circle"></i> 28:45 • 720p</span>
-                                        </div>
-                                    </div>
-                                    <div class="curriculum-item completed">
-                                        <i class="fas fa-check-circle text-green"></i>
-                                        <div class="curriculum-item-info">
-                                            <span>1.4 Practice Problems</span>
-                                            <span class="item-meta"><i class="fas fa-file-pdf"></i> PDF</span>
-                                        </div>
-                                    </div>
-                                    <div class="curriculum-item completed">
-                                        <i class="fas fa-check-circle text-green"></i>
-                                        <div class="curriculum-item-info">
-                                            <span>1.5 Quiz: Arrays Basics</span>
-                                            <span class="item-meta"><i class="fas fa-clipboard-check"></i> Score: 92%</span>
-                                        </div>
-                                    </div>
-                                    <div class="curriculum-item completed">
-                                        <i class="fas fa-check-circle text-green"></i>
-                                        <div class="curriculum-item-info">
-                                            <span>1.6 Coding Exercise</span>
-                                            <span class="item-meta"><i class="fas fa-code"></i> Submitted</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="curriculum-section expanded">
-                                <div class="curriculum-section-header" onclick="toggleCurriculumSection(this)">
-                                    <i class="fas fa-chevron-down"></i>
-                                    <h4>Module 2: Linked Lists</h4>
-                                    <span class="module-progress">3/5 completed</span>
-                                </div>
-                                <div class="curriculum-items">
-                                    <div class="curriculum-item completed" style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')" title="Watch 2.1 with DRM Player">
-                                        <i class="fas fa-play-circle text-green"></i>
-                                        <div class="curriculum-item-info">
-                                            <span>2.1 Singly Linked Lists</span>
-                                            <span class="item-meta"><i class="fas fa-play-circle"></i> 38:20 • 1080p</span>
-                                        </div>
-                                    </div>
-                                    <div class="curriculum-item completed" style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')" title="Watch 2.2 with DRM Player">
-                                        <i class="fas fa-play-circle text-green"></i>
-                                        <div class="curriculum-item-info">
-                                            <span>2.2 Doubly Linked Lists</span>
-                                            <span class="item-meta"><i class="fas fa-play-circle"></i> 42:15 • 1080p</span>
-                                        </div>
-                                    </div>
-                                    <div class="curriculum-item completed" style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')" title="Watch 2.3 with DRM Player">
-                                        <i class="fas fa-play-circle text-green"></i>
-                                        <div class="curriculum-item-info">
-                                            <span>2.3 Circular Linked Lists</span>
-                                            <span class="item-meta"><i class="fas fa-play-circle"></i> 25:10 • 720p</span>
-                                        </div>
-                                    </div>
-                                    <div class="curriculum-item current" style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')" title="Watch 2.4 with DRM Player">
-                                        <i class="fas fa-play-circle text-purple"></i>
-                                        <div class="curriculum-item-info">
-                                            <span>2.4 LL Problems & Patterns</span>
-                                            <span class="item-meta"><i class="fas fa-play-circle"></i> Watch Lecture</span>
-                                        </div>
-                                    </div>
-                                    <div class="curriculum-item locked">
-                                        <i class="fas fa-lock text-muted"></i>
-                                        <div class="curriculum-item-info">
-                                            <span>2.5 Quiz: Linked Lists</span>
-                                            <span class="item-meta"><i class="fas fa-clipboard-check"></i> Quiz</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="curriculum-section">
-                                <div class="curriculum-section-header" onclick="toggleCurriculumSection(this)">
-                                    <i class="fas fa-chevron-right"></i>
-                                    <h4>Module 3: Trees & Graphs</h4>
-                                    <span class="module-progress">0/8 completed</span>
-                                </div>
-                                <div class="curriculum-items hidden"></div>
-                            </div>
-                            <div class="curriculum-section">
-                                <div class="curriculum-section-header" onclick="toggleCurriculumSection(this)">
-                                    <i class="fas fa-chevron-right"></i>
-                                    <h4>Module 4: Sorting & Searching</h4>
-                                    <span class="module-progress">0/5 completed</span>
-                                </div>
-                                <div class="curriculum-items hidden"></div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <h3 style="margin: 0;"><i class="fas fa-list-ol"></i> Curriculum</h3>
+                            <span id="student-curriculum-stats" style="font-size: 0.8rem; color: var(--text-muted);">Cloud PostgreSQL Synced</span>
+                        </div>
+                        <div class="curriculum-list" id="student-course-curriculum-list">
+                            <div style="text-align: center; padding: 2rem; color: var(--text-muted); font-size: 0.85rem;">
+                                <i class="fas fa-spinner fa-spin"></i> Loading curriculum...
                             </div>
                         </div>
                     </div>
@@ -3068,6 +2833,110 @@ If BF > 1 or BF < -1, rotation needed!</code></pre>
             <div class="whiteboard-canvas-area grid-dots" id="whiteboard-canvas-area">
                 <canvas id="whiteboard-canvas"></canvas>
             </div>
+        </div>
+    </div>
+
+    <!-- ========== ADD SUBJECT MODAL ========== -->
+    <div class="modal-overlay hidden" id="modal-add-subject">
+        <div class="modal" style="max-width: 520px; width: 95vw;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i class="fas fa-book-medical text-cyan" style="font-size: 1.3rem;"></i>
+                    <h2 style="font-size: 1.2rem; margin: 0;">Add New Subject / Curriculum</h2>
+                </div>
+                <button class="modal-close" onclick="closeModal('modal-add-subject')"><i class="fas fa-times"></i></button>
+            </div>
+            <form onsubmit="event.preventDefault(); handleAddSubjectSubmit();">
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label style="font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; display: block;">Subject Title</label>
+                    <input type="text" id="subject-title-input" class="form-control" placeholder="e.g. Distributed Systems & Cloud Architecture" required style="width: 100%; padding: 10px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary);">
+                </div>
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label style="font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; display: block;">Instructor</label>
+                    <input type="text" id="subject-instructor-input" class="form-control" value="Prof. Rajesh Sharma" required style="width: 100%; padding: 10px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary);">
+                </div>
+                <div class="form-group" style="margin-bottom: 18px;">
+                    <label style="font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; display: block;">Category</label>
+                    <input type="text" id="subject-category-input" class="form-control" placeholder="e.g. Computer Science / Systems" value="Computer Science" required style="width: 100%; padding: 10px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary);">
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                    <button type="button" class="btn btn-ghost" onclick="closeModal('modal-add-subject')">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Create Subject</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ========== ADD TOPIC / MODULE MODAL ========== -->
+    <div class="modal-overlay hidden" id="modal-add-topic">
+        <div class="modal" style="max-width: 520px; width: 95vw;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i class="fas fa-folder-plus text-yellow" style="font-size: 1.3rem;"></i>
+                    <h2 style="font-size: 1.2rem; margin: 0;">Add Topic / Module</h2>
+                </div>
+                <button class="modal-close" onclick="closeModal('modal-add-topic')"><i class="fas fa-times"></i></button>
+            </div>
+            <form onsubmit="event.preventDefault(); handleAddTopicSubmit();">
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label style="font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; display: block;">Target Subject</label>
+                    <select id="topic-course-select" class="form-control" style="width: 100%; padding: 10px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary);"></select>
+                </div>
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label style="font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; display: block;">Topic / Module Title</label>
+                    <input type="text" id="topic-title-input" class="form-control" placeholder="e.g. Module 5: Heaps & Priority Queues" required style="width: 100%; padding: 10px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary);">
+                </div>
+                <div class="form-group" style="margin-bottom: 18px;">
+                    <label style="font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; display: block;">Description (Optional)</label>
+                    <textarea id="topic-desc-input" class="form-control" placeholder="Describe the topics covered in this module..." style="width: 100%; padding: 10px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary); min-height: 80px;"></textarea>
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                    <button type="button" class="btn btn-ghost" onclick="closeModal('modal-add-topic')">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-folder-plus"></i> Add Topic</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ========== ADD CURRICULUM ITEM / LECTURE MODAL ========== -->
+    <div class="modal-overlay hidden" id="modal-add-curriculum-item">
+        <div class="modal" style="max-width: 540px; width: 95vw;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i class="fas fa-layer-group text-indigo" style="font-size: 1.3rem;"></i>
+                    <h2 style="font-size: 1.2rem; margin: 0;">Add Item to Topic / Playlist</h2>
+                </div>
+                <button class="modal-close" onclick="closeModal('modal-add-curriculum-item')"><i class="fas fa-times"></i></button>
+            </div>
+            <form onsubmit="event.preventDefault(); handleAddCurriculumItemSubmit();">
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label style="font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; display: block;">Select Topic / Module</label>
+                    <select id="curriculum-item-module-select" class="form-control" style="width: 100%; padding: 10px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary);" required></select>
+                </div>
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label style="font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; display: block;">Item Title</label>
+                    <input type="text" id="curriculum-item-title-input" class="form-control" placeholder="e.g. 3.6 Binary Tree Diameter & Path Sums" required style="width: 100%; padding: 10px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary);">
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+                    <div class="form-group">
+                        <label style="font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; display: block;">Content Type</label>
+                        <select id="curriculum-item-type-select" class="form-control" style="width: 100%; padding: 10px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary);">
+                            <option value="video">🎥 Video Lecture</option>
+                            <option value="pdf">📄 PDF Notes / Sheet</option>
+                            <option value="quiz">📝 Quiz / Assessment</option>
+                            <option value="exercise">💻 Coding Exercise</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label style="font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; display: block;">Duration / File Size</label>
+                        <input type="text" id="curriculum-item-duration-input" class="form-control" value="35:00" placeholder="e.g. 35:00 or 3.2 MB" style="width: 100%; padding: 10px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary);">
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                    <button type="button" class="btn btn-ghost" onclick="closeModal('modal-add-curriculum-item')">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Add to Playlist</button>
+                </div>
+            </form>
         </div>
     </div>
 
