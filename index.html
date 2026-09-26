@@ -1286,15 +1286,16 @@
                         </div>
                         <div class="content-grid" id="content-grid">
                             <div class="content-item draggable" draggable="true">
-                                <div class="content-thumb video-thumb">
+                                <div class="content-thumb video-thumb" style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')" title="Watch with Dynamic DRM Protection">
                                     <i class="fas fa-play-circle fa-2x"></i>
                                     <span class="content-duration">32:15</span>
                                     <div class="drm-badge"><i class="fas fa-lock"></i> DRM</div>
                                 </div>
                                 <div class="content-meta">
-                                    <h4>Introduction to Arrays</h4>
+                                    <h4 style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')">Introduction to Arrays</h4>
                                     <span class="content-meta-info">Video • 32:15 • HD 1080p</span>
                                     <div class="content-actions">
+                                        <button class="btn-icon" title="Watch DRM Player" onclick="openRecordingPlayer('rec-dsa-bt-live')"><i class="fas fa-play text-cyan"></i></button>
                                         <button class="btn-icon" title="Edit"><i class="fas fa-edit"></i></button>
                                         <button class="btn-icon" title="Settings"><i class="fas fa-cog"></i></button>
                                         <button class="btn-icon" title="Move"><i class="fas fa-arrows-alt"></i></button>
@@ -1302,21 +1303,22 @@
                                     </div>
                                 </div>
                                 <div class="content-drm-settings">
-                                    <label class="checkbox-label"><input type="checkbox" checked> Allow download (in-app only)</label>
-                                    <label class="checkbox-label"><input type="checkbox" checked> Watermark enabled</label>
+                                    <label class="checkbox-label"><input type="checkbox" checked onchange="handleTeacherDownloadPolicyChange('rec-dsa-bt-live', this.checked ? 'in_app_only' : 'disabled')"> Allow download (in-app only)</label>
+                                    <label class="checkbox-label"><input type="checkbox" checked onchange="handleTeacherDRMToggle('rec-dsa-bt-live', this.checked)"> Watermark enabled</label>
                                     <label class="checkbox-label"><input type="checkbox"> Allow browser access</label>
                                 </div>
                             </div>
                             <div class="content-item draggable" draggable="true">
-                                <div class="content-thumb video-thumb" style="background: linear-gradient(135deg, #a29bfe, #6C5CE7);">
+                                <div class="content-thumb video-thumb" style="background: linear-gradient(135deg, #a29bfe, #6C5CE7); cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')" title="Watch with Dynamic DRM Protection">
                                     <i class="fas fa-play-circle fa-2x"></i>
                                     <span class="content-duration">45:30</span>
                                     <div class="drm-badge"><i class="fas fa-lock"></i> DRM</div>
                                 </div>
                                 <div class="content-meta">
-                                    <h4>Array Operations & Algorithms</h4>
+                                    <h4 style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')">Array Operations & Algorithms</h4>
                                     <span class="content-meta-info">Video • 45:30 • HD 1080p</span>
                                     <div class="content-actions">
+                                        <button class="btn-icon" title="Watch DRM Player" onclick="openRecordingPlayer('rec-dsa-bt-live')"><i class="fas fa-play text-cyan"></i></button>
                                         <button class="btn-icon" title="Edit"><i class="fas fa-edit"></i></button>
                                         <button class="btn-icon" title="Settings"><i class="fas fa-cog"></i></button>
                                         <button class="btn-icon" title="Move"><i class="fas fa-arrows-alt"></i></button>
@@ -1397,25 +1399,25 @@
                                     <span class="module-progress">6/6 completed</span>
                                 </div>
                                 <div class="curriculum-items">
-                                    <div class="curriculum-item completed">
-                                        <i class="fas fa-check-circle text-green"></i>
+                                    <div class="curriculum-item completed" style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')" title="Watch 1.1 with DRM Player">
+                                        <i class="fas fa-play-circle text-green"></i>
                                         <div class="curriculum-item-info">
                                             <span>1.1 Introduction to Arrays</span>
-                                            <span class="item-meta"><i class="fas fa-play-circle"></i> 32:15</span>
+                                            <span class="item-meta"><i class="fas fa-play-circle"></i> 32:15 • 1080p</span>
                                         </div>
                                     </div>
-                                    <div class="curriculum-item completed">
-                                        <i class="fas fa-check-circle text-green"></i>
+                                    <div class="curriculum-item completed" style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')" title="Watch 1.2 with DRM Player">
+                                        <i class="fas fa-play-circle text-green"></i>
                                         <div class="curriculum-item-info">
                                             <span>1.2 Array Operations</span>
-                                            <span class="item-meta"><i class="fas fa-play-circle"></i> 45:30</span>
+                                            <span class="item-meta"><i class="fas fa-play-circle"></i> 45:30 • 1080p</span>
                                         </div>
                                     </div>
-                                    <div class="curriculum-item completed">
-                                        <i class="fas fa-check-circle text-green"></i>
+                                    <div class="curriculum-item completed" style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')" title="Watch 1.3 with DRM Player">
+                                        <i class="fas fa-play-circle text-green"></i>
                                         <div class="curriculum-item-info">
                                             <span>1.3 String Manipulation</span>
-                                            <span class="item-meta"><i class="fas fa-play-circle"></i> 28:45</span>
+                                            <span class="item-meta"><i class="fas fa-play-circle"></i> 28:45 • 720p</span>
                                         </div>
                                     </div>
                                     <div class="curriculum-item completed">
@@ -1448,32 +1450,32 @@
                                     <span class="module-progress">3/5 completed</span>
                                 </div>
                                 <div class="curriculum-items">
-                                    <div class="curriculum-item completed">
-                                        <i class="fas fa-check-circle text-green"></i>
+                                    <div class="curriculum-item completed" style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')" title="Watch 2.1 with DRM Player">
+                                        <i class="fas fa-play-circle text-green"></i>
                                         <div class="curriculum-item-info">
                                             <span>2.1 Singly Linked Lists</span>
-                                            <span class="item-meta"><i class="fas fa-play-circle"></i> 38:20</span>
+                                            <span class="item-meta"><i class="fas fa-play-circle"></i> 38:20 • 1080p</span>
                                         </div>
                                     </div>
-                                    <div class="curriculum-item completed">
-                                        <i class="fas fa-check-circle text-green"></i>
+                                    <div class="curriculum-item completed" style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')" title="Watch 2.2 with DRM Player">
+                                        <i class="fas fa-play-circle text-green"></i>
                                         <div class="curriculum-item-info">
                                             <span>2.2 Doubly Linked Lists</span>
-                                            <span class="item-meta"><i class="fas fa-play-circle"></i> 42:15</span>
+                                            <span class="item-meta"><i class="fas fa-play-circle"></i> 42:15 • 1080p</span>
                                         </div>
                                     </div>
-                                    <div class="curriculum-item completed">
-                                        <i class="fas fa-check-circle text-green"></i>
+                                    <div class="curriculum-item completed" style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')" title="Watch 2.3 with DRM Player">
+                                        <i class="fas fa-play-circle text-green"></i>
                                         <div class="curriculum-item-info">
                                             <span>2.3 Circular Linked Lists</span>
-                                            <span class="item-meta"><i class="fas fa-play-circle"></i> 25:10</span>
+                                            <span class="item-meta"><i class="fas fa-play-circle"></i> 25:10 • 720p</span>
                                         </div>
                                     </div>
-                                    <div class="curriculum-item current">
+                                    <div class="curriculum-item current" style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')" title="Watch 2.4 with DRM Player">
                                         <i class="fas fa-play-circle text-purple"></i>
                                         <div class="curriculum-item-info">
                                             <span>2.4 LL Problems & Patterns</span>
-                                            <span class="item-meta"><i class="fas fa-file-pdf"></i> PDF</span>
+                                            <span class="item-meta"><i class="fas fa-play-circle"></i> Watch Lecture</span>
                                         </div>
                                     </div>
                                     <div class="curriculum-item locked">
@@ -1507,17 +1509,18 @@
                     <!-- Video/Content Player -->
                     <div class="content-player">
                         <div class="player-video">
-                            <div class="video-placeholder player-placeholder">
+                            <div class="video-placeholder player-placeholder" style="cursor: pointer;" onclick="openRecordingPlayer('rec-dsa-bt-live')">
                                 <i class="fas fa-play-circle fa-5x"></i>
                                 <h3>2.4 Linked List Problems & Patterns</h3>
-                                <p>Click to start learning</p>
-                                <div class="drm-watermark"><span>EduVault Protected</span></div>
+                                <p>Click to Launch DRM-Protected Stream</p>
+                                <div class="drm-watermark"><span><i class="fas fa-shield-alt"></i> EduVault Dynamic Watermark Active</span></div>
                             </div>
                         </div>
                         <div class="player-info">
                             <h2>2.4 Linked List Problems & Patterns</h2>
                             <div class="player-actions">
-                                <button class="btn btn-sm btn-outline"><i class="fas fa-download"></i> Download (App Only)</button>
+                                <button class="btn btn-sm btn-primary" onclick="openRecordingPlayer('rec-dsa-bt-live')"><i class="fas fa-play"></i> Watch with DRM Player</button>
+                                <button class="btn btn-sm btn-outline in-app-vault-badge" onclick="handleInAppOfflineDownload()"><i class="fas fa-cloud-download-alt"></i> In-Platform Offline Vault</button>
                                 <button class="btn btn-sm btn-outline"><i class="fas fa-bookmark"></i> Bookmark</button>
                                 <button class="btn btn-sm btn-outline"><i class="fas fa-share"></i> Notes</button>
                             </div>
@@ -2597,36 +2600,59 @@ If BF > 1 or BF < -1, rotation needed!</code></pre>
     </div>
 
     <!-- ========== RECORDING & CATCH-UP PLAYER MODAL ========== -->
+    <!-- ========== RECORDING & DRM ANTI-PIRACY PLAYER MODAL ========== -->
     <div class="modal-overlay hidden" id="recording-player-modal">
-        <div class="modal recording-player-modal">
+        <div class="modal recording-player-modal" style="max-width: 980px; width: 95vw;">
             <div class="recording-player-header">
                 <div>
-                    <h3 id="player-session-title"><i class="fas fa-play-circle text-purple"></i> Data Structures — Binary Trees</h3>
-                    <span class="text-muted" id="player-session-meta" style="font-size: 0.8rem;">Prof. Sharma • Recorded Sep 25, 2026</span>
+                    <h3 id="player-session-title" style="margin: 0; font-size: 1.2rem;"><i class="fas fa-shield-alt text-cyan"></i> Data Structures — Binary Trees</h3>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; font-size: 0.8rem;">
+                        <span class="text-muted" id="player-session-meta">Prof. Sharma • Recorded Sep 25, 2026</span>
+                        <span class="badge badge-success" style="font-size: 0.7rem;"><i class="fas fa-lock"></i> DRM Cryptographic Watermark Active</span>
+                    </div>
                 </div>
                 <button class="modal-close" onclick="closeRecordingPlayer()"><i class="fas fa-times"></i></button>
             </div>
             <div class="recording-player-body">
-                <div class="recording-video-screen">
-                    <!-- Simulated Lecture Content Canvas / Visual -->
-                    <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; background: radial-gradient(circle at center, #1b203d, #0b0d17); text-align: center; padding: 20px;">
-                        <div style="position: absolute; top: 16px; left: 16px; background: rgba(0,0,0,0.6); padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; color: #00D2FF; font-family: monospace;">
-                            <i class="fas fa-shield-alt"></i> DRM Protected Stream
+                <div class="recording-video-screen" id="recording-video-container" oncontextmenu="return false;">
+                    <!-- Real HTML5 Video element -->
+                    <video id="player-video-tag" style="width: 100%; height: 100%; object-fit: contain; background: #070A14;" playsinline controlsList="nodownload nofullscreen noplaybackrate" oncontextmenu="return false;"></video>
+                    
+                    <!-- Fallback / Simulated Interactive Lecture Screen -->
+                    <div id="player-simulated-screen" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; background: radial-gradient(circle at center, #1b203d, #0b0d17); text-align: center; padding: 20px;">
+                        <div style="position: absolute; top: 16px; left: 16px; background: rgba(0,0,0,0.7); padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; color: #00D2FF; font-family: monospace; border: 1px solid rgba(0, 210, 255, 0.3);">
+                            <i class="fas fa-shield-halved"></i> DRM Protected Stream
                         </div>
                         <div style="position: absolute; top: 16px; right: 16px; background: rgba(255, 145, 0, 0.2); color: #FF9100; border: 1px solid rgba(255, 145, 0, 0.4); padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;" id="player-missed-alert">
                             <i class="fas fa-plug-circle-xmark"></i> Missed Segment: 00:33:00 – 00:45:00
                         </div>
-                        <i class="fas fa-chalkboard-teacher fa-4x" style="color: #6C5CE7; margin-bottom: 16px;"></i>
+                        <i class="fas fa-chalkboard-teacher fa-4x" style="color: #6366F1; margin-bottom: 16px;"></i>
                         <h3 id="player-topic-display" style="font-size: 1.25rem; font-weight: 700; margin-bottom: 6px; color: #EAEDF3;">Topic: Binary Search Tree Insertion</h3>
                         <p id="player-subtopic-display" style="font-size: 0.85rem; color: #9BA4B5; max-width: 500px; margin: 0 auto;">"Remember: Left subtree &lt; Root &lt; Right subtree. No duplicate values in standard BSTs."</p>
-                        <!-- Dynamic DRM Watermark -->
-                        <div class="drm-watermark" style="position: absolute; font-size: 0.75rem; opacity: 0.15; color: white; pointer-events: none;">student@eduvault.io • Session ID: #83511</div>
+                    </div>
+
+                    <!-- Dynamic Floating 60fps DRM Watermark Canvas Layer -->
+                    <canvas id="player-drm-canvas" class="drm-canvas-overlay" width="940" height="380"></canvas>
+
+                    <!-- Anti-Piracy Screen Recording Protection Shield -->
+                    <div id="drm-security-shield" class="drm-security-shield hidden">
+                        <i class="fas fa-shield-halved drm-shield-icon"></i>
+                        <div class="drm-shield-title">Content Protected by Intellectual Property Rights</div>
+                        <div class="drm-shield-desc">
+                            Screen recording, window sharing, or window focus loss was detected. In accordance with digital copyright protection laws, playback has been paused to prevent unauthorized duplication.
+                        </div>
+                        <button class="btn btn-primary" onclick="resumeDRMPlayback()"><i class="fas fa-play"></i> Resume Verified Playback</button>
+                    </div>
+
+                    <!-- Captions Overlay -->
+                    <div id="player-captions-overlay" class="player-captions-overlay hidden">
+                        <span class="caption-line" id="player-caption-text">Binary Search Trees ensure logarithmic lookup when balanced.</span>
                     </div>
 
                     <!-- Overlay Controls -->
                     <div class="video-screen-overlay">
                         <div class="video-progress-container" onclick="seekRecording(event)" id="video-progress-bar">
-                            <div class="video-missed-segment-highlight" title="Missed while disconnected"></div>
+                            <div class="video-missed-segment-highlight" id="video-missed-highlight" title="Missed while disconnected"></div>
                             <div class="video-progress-filled" id="video-progress-filled" style="width: 38%;"></div>
                         </div>
                         <div class="video-controls-row">
@@ -2634,12 +2660,25 @@ If BF > 1 or BF < -1, rotation needed!</code></pre>
                                 <button class="video-play-btn" onclick="togglePlayerPlay()"><i class="fas fa-pause" id="player-play-icon"></i></button>
                                 <button class="btn-icon-sm" onclick="skipRecording(-10)"><i class="fas fa-undo"></i> 10s</button>
                                 <button class="btn-icon-sm" onclick="skipRecording(10)"><i class="fas fa-redo"></i> 10s</button>
-                                <span style="font-family: monospace; font-size: 0.8rem;" id="player-timer">00:35:14 / 01:32:18</span>
+                                <span style="font-family: monospace; font-size: 0.8rem;" id="player-timer">00:35:14 / 00:47:23</span>
                             </div>
                             <div class="video-controls-right">
                                 <button class="btn btn-sm btn-outline" style="padding: 4px 8px; font-size: 0.75rem; border-color: #FFD600; color: #FFD600;" onclick="jumpToRecordingTimestamp('dsa-bt-live', '00:33:00')">
                                     <i class="fas fa-history"></i> Jump to Missed
                                 </button>
+                                
+                                <!-- Multi-Resolution Dropdown -->
+                                <div style="position: relative;">
+                                    <span class="quality-badge" id="player-quality-badge" onclick="toggleQualityDropdown()"><i class="fas fa-sliders-h"></i> 1080p HD</span>
+                                    <div class="quality-menu hidden" id="quality-menu" style="position: absolute; bottom: 100%; right: 0; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px; display: flex; flex-direction: column; gap: 4px; z-index: 30; width: 150px; margin-bottom: 8px; box-shadow: var(--shadow-lg);">
+                                        <button type="button" class="btn btn-sm btn-ghost" style="font-size: 0.75rem; text-align: left; justify-content: space-between;" onclick="setPlayerResolution('1080p')">1080p HD <span style="font-size: 0.65rem; color: #06B6D4;">Full HD</span></button>
+                                        <button type="button" class="btn btn-sm btn-ghost" style="font-size: 0.75rem; text-align: left; justify-content: space-between;" onclick="setPlayerResolution('720p')">720p HD <span style="font-size: 0.65rem; color: #10B981;">Standard</span></button>
+                                        <button type="button" class="btn btn-sm btn-ghost" style="font-size: 0.75rem; text-align: left; justify-content: space-between;" onclick="setPlayerResolution('480p')">480p SD <span style="font-size: 0.65rem; color: #F59E0B;">Medium</span></button>
+                                        <button type="button" class="btn btn-sm btn-ghost" style="font-size: 0.75rem; text-align: left; justify-content: space-between;" onclick="setPlayerResolution('360p')">360p <span style="font-size: 0.65rem; color: #F43F5E;">Data Saver</span></button>
+                                    </div>
+                                </div>
+
+                                <button class="btn-icon-sm" id="btn-toggle-captions" onclick="togglePlayerCaptions()" title="Toggle Captions (CC)"><i class="fas fa-closed-captioning"></i></button>
                                 <span class="speed-badge" onclick="cyclePlayerSpeed()" id="player-speed-badge">1.0x</span>
                                 <button class="btn-icon-sm" onclick="togglePlayerMute()"><i class="fas fa-volume-up" id="player-vol-icon"></i></button>
                             </div>
@@ -2647,16 +2686,80 @@ If BF > 1 or BF < -1, rotation needed!</code></pre>
                     </div>
                 </div>
 
-                <!-- Lecture Notes & Quick Info -->
-                <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
-                    <div>
-                        <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);"><i class="fas fa-play-circle text-cyan"></i> Complete Recorded Lecture</span>
-                        <p style="font-size: 0.78rem; color: var(--text-muted); margin: 2px 0 0 0;">Students can watch the complete recorded class anytime with DRM watermarking and crystal clear audio.</p>
+                <!-- Lecture Chapters Navigation -->
+                <div class="player-chapters-drawer">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span style="font-size: 0.82rem; font-weight: 700; color: var(--text-primary);"><i class="fas fa-bookmark text-cyan"></i> Curated Lecture Chapters & Topics</span>
+                        <span style="font-size: 0.72rem; color: var(--text-muted);"><i class="fas fa-hand-pointer"></i> Click any chapter to jump</span>
                     </div>
-                    <div style="display: flex; gap: 8px;">
+                    <div id="player-chapters-list" style="display: flex; flex-direction: column; gap: 6px;">
+                        <!-- Dynamically filled with chapters -->
+                    </div>
+                </div>
+
+                <!-- Lecture Notes, Anti-Piracy Watermark Info & In-Platform Vault Actions -->
+                <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px 18px; margin-top: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 0.88rem; font-weight: 700; color: var(--text-primary);"><i class="fas fa-shield-alt text-cyan"></i> Dynamic DRM Active</span>
+                            <span class="in-app-vault-badge" id="player-drm-tag"><i class="fas fa-fingerprint"></i> Watermark: student@eduvault.io</span>
+                        </div>
+                        <p style="font-size: 0.78rem; color: var(--text-muted); margin: 3px 0 0 0;">
+                            This stream is watermarked with your student identity and timestamp. In-browser direct file downloading is disabled to prevent copyright infringement.
+                        </p>
+                    </div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn btn-sm btn-outline in-app-vault-badge" id="btn-inapp-offline" onclick="handleInAppOfflineDownload()">
+                            <i class="fas fa-cloud-download-alt"></i> In-Platform Offline Vault
+                        </button>
                         <button class="btn btn-sm btn-outline" onclick="closeRecordingPlayer(); navigateTo('course-view');"><i class="fas fa-book-open"></i> Course Vault</button>
                         <button class="btn btn-sm btn-primary" onclick="closeRecordingPlayer(); navigateTo('ai-doubt');"><i class="fas fa-robot"></i> Ask AI Tutor</button>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== IN-PLATFORM OFFLINE VAULT MODAL ========== -->
+    <div class="modal-overlay hidden" id="modal-download-restriction">
+        <div class="modal" style="max-width: 520px; width: 95vw;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i class="fas fa-shield-alt text-cyan" style="font-size: 1.5rem;"></i>
+                    <h2 style="font-size: 1.25rem; margin: 0;">In-Platform Offline Vault</h2>
+                </div>
+                <button class="modal-close" onclick="closeDownloadRestrictionModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div>
+                <div style="background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
+                    <div style="font-weight: 700; font-size: 0.95rem; color: var(--text-primary); margin-bottom: 4px;">
+                        <i class="fas fa-lock text-purple"></i> Institutional Copyright Protection Policy
+                    </div>
+                    <p style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5; margin: 0;">
+                        Direct extraction of naked <code>.mp4</code> video files to personal computer drives outside EduVault is strictly disabled to prevent illegal sharing and piracy.
+                    </p>
+                </div>
+
+                <p style="font-size: 0.85rem; color: var(--text-primary); line-height: 1.5;">
+                    Would you like to cache this lecture inside the <strong>EduVault In-Platform Offline Vault</strong>? This allows you to watch the entire lecture offline within this platform even during poor internet or power outages.
+                </p>
+
+                <!-- Cache Progress Bar -->
+                <div id="offline-cache-progress-container" class="hidden" style="margin: 16px 0;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.78rem; margin-bottom: 4px;">
+                        <span id="offline-cache-status-text">Encrypting lecture segments into local vault...</span>
+                        <span id="offline-cache-pct">0%</span>
+                    </div>
+                    <div style="height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden;">
+                        <div id="offline-cache-progress-bar" style="height: 100%; width: 0%; background: linear-gradient(90deg, #6366F1, #06B6D4); transition: width 0.2s ease;"></div>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                    <button type="button" class="btn btn-ghost" onclick="closeDownloadRestrictionModal()">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="btn-start-platform-cache" onclick="startInPlatformOfflineCache()">
+                        <i class="fas fa-database"></i> Cache In-Platform for Offline Study
+                    </button>
                 </div>
             </div>
         </div>

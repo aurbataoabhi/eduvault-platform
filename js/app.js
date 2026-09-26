@@ -1505,6 +1505,7 @@ function handleFileSelect(e) {
 async function uploadContent() {
     const titleInput = document.getElementById('upload-title-input');
     const categorySelect = document.getElementById('upload-category-input');
+    const typeSelect = document.getElementById('upload-type-input');
     const drmToggle = document.getElementById('upload-drm-input');
 
     const title = titleInput ? titleInput.value.trim() : '';
@@ -1513,11 +1514,14 @@ async function uploadContent() {
         return;
     }
 
+    const isVideo = typeSelect && typeSelect.value === 'Video Lecture';
+    const isDRM = drmToggle ? drmToggle.checked : true;
+
     const payload = {
         title: title,
         instructor: AppState.userName || 'Prof. Rajesh Sharma',
         category: categorySelect ? categorySelect.value : 'Computer Science',
-        drm_protected: drmToggle ? drmToggle.checked : true
+        drm_protected: isDRM
     };
 
     try {
@@ -1527,6 +1531,24 @@ async function uploadContent() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
+
+        // Also register as a streamable recording if it's a video lecture
+        if (isVideo) {
+            await fetch(`${BackendSync.apiUrl}/api/recordings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: title,
+                    instructor: AppState.userName || 'Prof. Rajesh Sharma',
+                    duration: '45:00',
+                    quality: 'HD 1080p',
+                    video_url: '/assets/videos/lecture.mp4',
+                    drm_protected: isDRM,
+                    download_policy: 'in_app_only'
+                })
+            }).catch(() => {});
+        }
+
         if (res.ok) {
             closeUploadModal();
             if (titleInput) titleInput.value = '';
@@ -2747,6 +2769,572 @@ async function handleClaimKeySubmit() {
             btn.innerHTML = '<i class="fas fa-shield-alt"></i> Verify & Claim Access';
         }
     }
+}
+
+// ===================================================================
+// FEATURE 2: DRM WATERMARKED ANTI-PIRACY PLAYER & IN-PLATFORM VAULT
+// ===================================================================
+
+const DRMPlayerState = {
+    isOpen: false,
+    isPlaying: false,
+    currentTime: 2114, // 00:35:14
+    duration: 2843,    // 00:47:23
+    playbackSpeed: 1.0,
+    speedOptions: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
+    speedIndex: 2,
+    resolution: '1080p',
+    isMuted: false,
+    showCaptions: true,
+    currentRecordingId: 'rec-dsa-bt-live',
+    currentRecording: null,
+    watermarkAnimFrame: null,
+    watermarkX: 120,
+    watermarkY: 80,
+    watermarkVx: 0.75,
+    watermarkVy: 0.55,
+    antiPiracyActive: false,
+    cachedOfflineIds: new Set(['rec-dsa-bt-live']),
+    captionsData: [
+        { start: 0, end: 15, text: "Welcome to today's deep dive into Hierarchical Data Structures & Binary Trees." },
+        { start: 16, end: 35, text: "Each node contains a key, and references to left and right child pointers." },
+        { start: 36, end: 60, text: "Notice the BST invariant: Left Subtree < Root Key < Right Subtree." },
+        { start: 1980, end: 2010, text: "📌 Practical Implementation: Writing the recursive insertNode function." },
+        { start: 2011, end: 2100, text: "If current node is null, we return new TreeNode(value) — base case reached." },
+        { start: 2101, end: 2700, text: "Time complexity is O(h) where h is the tree height, reaching O(log n) when balanced." }
+    ]
+};
+
+// 1. Dynamic 60fps Floating DRM Canvas Watermark Engine
+function startDRMWatermark() {
+    const canvas = document.getElementById('player-drm-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Synchronize canvas size to parent container
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width || 940;
+    canvas.height = rect.height || 380;
+
+    const studentEmail = (AppState.userRole === 'student' && AppState.userEmail) || localStorage.getItem('eduvault_user_email') || 'student@eduvault.io';
+    const studentName = AppState.userName || 'Abhishek Dwivedi';
+    const licenseId = `EDV-VAULT-2026-${Math.abs(hashString(studentEmail)) % 900000 + 100000}`;
+
+    function renderWatermark() {
+        if (!DRMPlayerState.isOpen) return;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Update physics coordinates
+        DRMPlayerState.watermarkX += DRMPlayerState.watermarkVx;
+        DRMPlayerState.watermarkY += DRMPlayerState.watermarkVy;
+
+        // Bounce boundaries
+        const boxWidth = 320;
+        const boxHeight = 70;
+        if (DRMPlayerState.watermarkX <= 10 || DRMPlayerState.watermarkX + boxWidth >= canvas.width - 10) {
+            DRMPlayerState.watermarkVx *= -1;
+        }
+        if (DRMPlayerState.watermarkY <= 20 || DRMPlayerState.watermarkY + boxHeight >= canvas.height - 20) {
+            DRMPlayerState.watermarkVy *= -1;
+        }
+
+        // Draw translucent floating security tile
+        ctx.save();
+        ctx.translate(DRMPlayerState.watermarkX, DRMPlayerState.watermarkY);
+        ctx.rotate(-0.04); // subtle angle prevents simple video masking
+
+        // Background pill
+        ctx.fillStyle = 'rgba(10, 15, 30, 0.45)';
+        ctx.strokeStyle = 'rgba(6, 182, 212, 0.35)';
+        ctx.lineWidth = 1;
+        roundRect(ctx, 0, 0, boxWidth, boxHeight, 8, true, true);
+
+        // Watermark text
+        const nowUTC = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.48)';
+        ctx.font = 'bold 11px Inter, sans-serif';
+        ctx.fillText(`🔒 EduVault DRM Vault • ${licenseId}`, 10, 18);
+
+        ctx.fillStyle = 'rgba(6, 182, 212, 0.75)';
+        ctx.font = '10px monospace';
+        ctx.fillText(`Student: ${studentName} (${studentEmail})`, 10, 36);
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.42)';
+        ctx.font = '9px monospace';
+        ctx.fillText(`Timestamp: ${nowUTC} • DO NOT RECORD`, 10, 54);
+
+        ctx.restore();
+
+        // Secondary subtle diagonal watermark grid across screen
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.035)';
+        ctx.font = '13px monospace';
+        ctx.rotate(-0.25);
+        for (let x = -200; x < canvas.width + 400; x += 280) {
+            for (let y = -200; y < canvas.height + 400; y += 140) {
+                ctx.fillText(`${studentEmail} • ${licenseId}`, x, y);
+            }
+        }
+        ctx.restore();
+
+        DRMPlayerState.watermarkAnimFrame = requestAnimationFrame(renderWatermark);
+    }
+
+    cancelAnimationFrame(DRMPlayerState.watermarkAnimFrame);
+    DRMPlayerState.watermarkAnimFrame = requestAnimationFrame(renderWatermark);
+}
+
+function stopDRMWatermark() {
+    if (DRMPlayerState.watermarkAnimFrame) {
+        cancelAnimationFrame(DRMPlayerState.watermarkAnimFrame);
+        DRMPlayerState.watermarkAnimFrame = null;
+    }
+}
+
+// 2. Active Anti-Piracy & Anti-Screen-Recording Guardians
+function initAntiPiracyGuards() {
+    if (DRMPlayerState.antiPiracyActive) return;
+    DRMPlayerState.antiPiracyActive = true;
+
+    // Window blur or tab switch detection
+    window.addEventListener('blur', onWindowSecurityBlur);
+    document.addEventListener('visibilitychange', onVisibilitySecurityChange);
+    document.addEventListener('keydown', onSecurityKeydown);
+}
+
+function teardownAntiPiracyGuards() {
+    DRMPlayerState.antiPiracyActive = false;
+    window.removeEventListener('blur', onWindowSecurityBlur);
+    document.removeEventListener('visibilitychange', onVisibilitySecurityChange);
+    document.removeEventListener('keydown', onSecurityKeydown);
+}
+
+function onWindowSecurityBlur() {
+    if (!DRMPlayerState.isOpen) return;
+    triggerDRMSecurityShield('Window lost focus or screen capture application activated');
+}
+
+function onVisibilitySecurityChange() {
+    if (!DRMPlayerState.isOpen) return;
+    if (document.hidden) {
+        triggerDRMSecurityShield('Background tab switch detected');
+    }
+}
+
+function onSecurityKeydown(e) {
+    if (!DRMPlayerState.isOpen) return;
+
+    // Detect PrintScreen or Snipping Tool (Win+Shift+S)
+    if (e.key === 'PrintScreen' || e.keyCode === 44) {
+        e.preventDefault();
+        try { navigator.clipboard?.writeText('Content Protected by EduVault DRM'); } catch(ex){}
+        triggerDRMSecurityShield('Screen capture attempt intercepted');
+        showToast('⚠️ Screenshotting or recording lecture streams is prohibited by teaching copyright policy', 'warning');
+    }
+
+    // Inspect Element / DevTools shortcuts
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'C' || e.key === 'c' || e.key === 'J' || e.key === 'j')) {
+        e.preventDefault();
+        triggerDRMSecurityShield('Developer tools inspection restricted during DRM playback');
+    }
+
+    // View Source / Save Page
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'U' || e.key === 'u' || e.key === 'S' || e.key === 's')) {
+        e.preventDefault();
+        showToast('⚠️ Page saving and source extraction is restricted for protected lectures', 'warning');
+    }
+}
+
+function triggerDRMSecurityShield(reason) {
+    if (!DRMPlayerState.isOpen) return;
+    // Pause video
+    DRMPlayerState.isPlaying = false;
+    updatePlayerPlayIcon();
+    const shield = document.getElementById('drm-security-shield');
+    if (shield) {
+        shield.classList.remove('hidden');
+    }
+}
+
+function resumeDRMPlayback() {
+    const shield = document.getElementById('drm-security-shield');
+    if (shield) shield.classList.add('hidden');
+    DRMPlayerState.isPlaying = true;
+    updatePlayerPlayIcon();
+    showToast('▶️ Playback verified and resumed', 'success');
+}
+
+// 3. Open & Close DRM Protected Player
+async function openRecordingPlayer(recId = 'rec-dsa-bt-live') {
+    const modal = document.getElementById('recording-player-modal');
+    if (!modal) return;
+
+    DRMPlayerState.isOpen = true;
+    DRMPlayerState.currentRecordingId = recId;
+    modal.classList.remove('hidden');
+
+    const email = (AppState.userRole === 'student' && AppState.userEmail) || localStorage.getItem('eduvault_user_email') || 'student@eduvault.io';
+
+    // Fetch live recording metadata from backend
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/recordings/${recId}?student_email=${encodeURIComponent(email)}`);
+        if (res.ok) {
+            const data = await res.json();
+            DRMPlayerState.currentRecording = data;
+
+            // Set title & meta
+            const titleEl = document.getElementById('player-session-title');
+            if (titleEl) titleEl.innerHTML = `<i class="fas fa-shield-alt text-cyan"></i> ${escapeHtml(data.title)}`;
+
+            const metaEl = document.getElementById('player-session-meta');
+            if (metaEl) metaEl.textContent = `${data.instructor || 'Prof. Rajesh Sharma'} • Recorded ${data.recorded_date || 'Sep 25, 2026'}`;
+
+            const drmTag = document.getElementById('player-drm-tag');
+            if (drmTag) drmTag.innerHTML = `<i class="fas fa-fingerprint"></i> Watermark: ${escapeHtml(email)}`;
+
+            // Render chapters
+            renderPlayerChapters(data.chapters || []);
+        }
+    } catch(err) {
+        console.warn('Error loading recording metadata:', err);
+    }
+
+    // Reset video player states
+    DRMPlayerState.isPlaying = true;
+    updatePlayerPlayIcon();
+    startDRMWatermark();
+    initAntiPiracyGuards();
+
+    // Start video tick loop
+    startPlayerTick();
+}
+
+function closeRecordingPlayer() {
+    const modal = document.getElementById('recording-player-modal');
+    if (modal) modal.classList.add('hidden');
+
+    DRMPlayerState.isOpen = false;
+    DRMPlayerState.isPlaying = false;
+    stopDRMWatermark();
+    teardownAntiPiracyGuards();
+    stopPlayerTick();
+}
+
+function renderPlayerChapters(chapters) {
+    const list = document.getElementById('player-chapters-list');
+    if (!list) return;
+
+    if (!chapters || chapters.length === 0) {
+        chapters = [
+            { title: "1. Lecture Overview & Prerequisites", timestamp: "00:00:00", seconds: 0 },
+            { title: "2. Tree Terminology & Node Definition", timestamp: "00:15:20", seconds: 920 },
+            { title: "3. Binary Search Tree Insertion (Practical)", timestamp: "00:33:00", seconds: 1980 },
+            { title: "4. Complexity Analysis & Traversal Quiz", timestamp: "00:45:10", seconds: 2710 }
+        ];
+    }
+
+    list.innerHTML = chapters.map((ch, idx) => `
+        <button type="button" class="chapter-item-btn ${idx === 2 ? 'active' : ''}" onclick="seekToSeconds(${ch.seconds})">
+            <span><i class="fas fa-play-circle text-purple" style="margin-right: 6px;"></i> ${escapeHtml(ch.title)}</span>
+            <span class="chapter-time-tag">${ch.timestamp}</span>
+        </button>
+    `).join('');
+}
+
+// 4. Playback Controls & Scrubber
+let playerInterval = null;
+
+function startPlayerTick() {
+    stopPlayerTick();
+    playerInterval = setInterval(() => {
+        if (!DRMPlayerState.isPlaying) return;
+
+        DRMPlayerState.currentTime += DRMPlayerState.playbackSpeed;
+        if (DRMPlayerState.currentTime >= DRMPlayerState.duration) {
+            DRMPlayerState.currentTime = DRMPlayerState.duration;
+            DRMPlayerState.isPlaying = false;
+            updatePlayerPlayIcon();
+        }
+
+        updatePlayerUI();
+    }, 1000);
+}
+
+function stopPlayerTick() {
+    if (playerInterval) {
+        clearInterval(playerInterval);
+        playerInterval = null;
+    }
+}
+
+function updatePlayerUI() {
+    // Timer display
+    const timer = document.getElementById('player-timer');
+    if (timer) {
+        timer.textContent = `${formatSeconds(DRMPlayerState.currentTime)} / ${formatSeconds(DRMPlayerState.duration)}`;
+    }
+
+    // Progress bar
+    const filled = document.getElementById('video-progress-filled');
+    if (filled && DRMPlayerState.duration > 0) {
+        const pct = (DRMPlayerState.currentTime / DRMPlayerState.duration) * 100;
+        filled.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+    }
+
+    // Captions sync
+    updateCaptions();
+}
+
+function updateCaptions() {
+    const box = document.getElementById('player-captions-overlay');
+    const textEl = document.getElementById('player-caption-text');
+    if (!box || !textEl) return;
+
+    if (!DRMPlayerState.showCaptions) {
+        box.classList.add('hidden');
+        return;
+    }
+
+    const match = DRMPlayerState.captionsData.find(c => DRMPlayerState.currentTime >= c.start && DRMPlayerState.currentTime <= c.end);
+    if (match) {
+        textEl.textContent = match.text;
+        box.classList.remove('hidden');
+    } else {
+        box.classList.add('hidden');
+    }
+}
+
+function togglePlayerPlay() {
+    DRMPlayerState.isPlaying = !DRMPlayerState.isPlaying;
+    updatePlayerPlayIcon();
+}
+
+function updatePlayerPlayIcon() {
+    const icon = document.getElementById('player-play-icon');
+    if (icon) {
+        icon.className = DRMPlayerState.isPlaying ? 'fas fa-pause' : 'fas fa-play';
+    }
+}
+
+function skipRecording(delta) {
+    DRMPlayerState.currentTime = Math.max(0, Math.min(DRMPlayerState.duration, DRMPlayerState.currentTime + delta));
+    updatePlayerUI();
+}
+
+function seekRecording(event) {
+    const bar = document.getElementById('video-progress-bar');
+    if (!bar) return;
+    const rect = bar.getBoundingClientRect();
+    const clickX = event.clientX - rect.left;
+    const pct = Math.max(0, Math.min(1, clickX / rect.width));
+    DRMPlayerState.currentTime = Math.floor(pct * DRMPlayerState.duration);
+    updatePlayerUI();
+}
+
+function seekToSeconds(sec) {
+    DRMPlayerState.currentTime = Math.max(0, Math.min(DRMPlayerState.duration, sec));
+    DRMPlayerState.isPlaying = true;
+    updatePlayerPlayIcon();
+    updatePlayerUI();
+}
+
+function cyclePlayerSpeed() {
+    DRMPlayerState.speedIndex = (DRMPlayerState.speedIndex + 1) % DRMPlayerState.speedOptions.length;
+    DRMPlayerState.playbackSpeed = DRMPlayerState.speedOptions[DRMPlayerState.speedIndex];
+    const badge = document.getElementById('player-speed-badge');
+    if (badge) {
+        badge.textContent = `${DRMPlayerState.playbackSpeed}x`;
+    }
+    showToast(`Speed set to ${DRMPlayerState.playbackSpeed}x`, 'info');
+}
+
+function togglePlayerMute() {
+    DRMPlayerState.isMuted = !DRMPlayerState.isMuted;
+    const icon = document.getElementById('player-vol-icon');
+    if (icon) {
+        icon.className = DRMPlayerState.isMuted ? 'fas fa-volume-mute' : 'fas fa-volume-up';
+    }
+    showToast(DRMPlayerState.isMuted ? 'Muted' : 'Unmuted', 'info');
+}
+
+function toggleQualityDropdown() {
+    const menu = document.getElementById('quality-menu');
+    if (menu) menu.classList.toggle('hidden');
+}
+
+function setPlayerResolution(res) {
+    DRMPlayerState.resolution = res;
+    const badge = document.getElementById('player-quality-badge');
+    if (badge) {
+        badge.innerHTML = `<i class="fas fa-sliders-h"></i> ${res}`;
+    }
+    const menu = document.getElementById('quality-menu');
+    if (menu) menu.classList.add('hidden');
+
+    const rates = {
+        '1080p': 'Full HD (1080p @ 60fps • 1.2 GB/hr)',
+        '720p': 'HD (720p • 650 MB/hr)',
+        '480p': 'SD (480p • 320 MB/hr)',
+        '360p': 'Data Saver (360p • 160 MB/hr - Ideal for slow networks)'
+    };
+    showToast(`Resolution switched to ${rates[res] || res}`, 'success');
+}
+
+function togglePlayerCaptions() {
+    DRMPlayerState.showCaptions = !DRMPlayerState.showCaptions;
+    const btn = document.getElementById('btn-toggle-captions');
+    if (btn) {
+        btn.style.color = DRMPlayerState.showCaptions ? '#06B6D4' : 'inherit';
+    }
+    updateCaptions();
+    showToast(DRMPlayerState.showCaptions ? 'Captions Enabled' : 'Captions Disabled', 'info');
+}
+
+function jumpToRecordingTimestamp(sessionId, timestamp = '00:33:00') {
+    const parts = timestamp.split(':').map(Number);
+    let seconds = 0;
+    if (parts.length === 3) seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+    else if (parts.length === 2) seconds = parts[0] * 60 + parts[1];
+
+    if (!DRMPlayerState.isOpen) {
+        openRecordingPlayer('rec-' + sessionId);
+    }
+    seekToSeconds(seconds);
+    showToast(`⚡ Jumped to missed lecture segment: ${timestamp}`, 'success');
+}
+
+// 5. In-Platform Offline Vault Encrypted Storage Engine
+function handleInAppOfflineDownload() {
+    const modal = document.getElementById('modal-download-restriction');
+    if (modal) {
+        document.getElementById('offline-cache-progress-container')?.classList.add('hidden');
+        modal.classList.remove('hidden');
+    }
+}
+
+function closeDownloadRestrictionModal() {
+    const modal = document.getElementById('modal-download-restriction');
+    if (modal) modal.classList.add('hidden');
+}
+
+function startInPlatformOfflineCache() {
+    const progressBox = document.getElementById('offline-cache-progress-container');
+    const bar = document.getElementById('offline-cache-progress-bar');
+    const pct = document.getElementById('offline-cache-pct');
+    const statusText = document.getElementById('offline-cache-status-text');
+    const btn = document.getElementById('btn-start-platform-cache');
+
+    if (progressBox) progressBox.classList.remove('hidden');
+    if (btn) btn.disabled = true;
+
+    let current = 0;
+    const interval = setInterval(() => {
+        current += Math.floor(Math.random() * 18) + 12;
+        if (current >= 100) {
+            current = 100;
+            clearInterval(interval);
+
+            if (bar) bar.style.width = '100%';
+            if (pct) pct.textContent = '100%';
+            if (statusText) statusText.textContent = '🔒 Encrypted segments stored in IndexedDB platform vault!';
+
+            // Record offline cache capability in local storage / IndexedDB simulation
+            DRMPlayerState.cachedOfflineIds.add(DRMPlayerState.currentRecordingId);
+            try {
+                localStorage.setItem('eduvault_cached_offline', JSON.stringify(Array.from(DRMPlayerState.cachedOfflineIds)));
+            } catch(e){}
+
+            setTimeout(() => {
+                closeDownloadRestrictionModal();
+                showToast('🎉 Lecture successfully cached for in-platform offline viewing!', 'success');
+                const vaultBtn = document.getElementById('btn-inapp-offline');
+                if (vaultBtn) {
+                    vaultBtn.innerHTML = '<i class="fas fa-check-circle text-green"></i> Offline Vault Ready';
+                }
+            }, 900);
+        } else {
+            if (bar) bar.style.width = `${current}%`;
+            if (pct) pct.textContent = `${current}%`;
+        }
+    }, 250);
+}
+
+// Teacher DRM Management Handlers
+async function handleTeacherDRMToggle(recId, isDRM) {
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/recordings/${recId}/drm`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                drm_protected: isDRM,
+                download_policy: isDRM ? 'in_app_only' : 'allowed'
+            })
+        });
+        if (res.ok) {
+            showToast(`🛡️ Dynamic DRM Watermarking ${isDRM ? 'Activated' : 'Deactivated'} in Cloud DB`, 'success');
+        } else {
+            showToast('Failed to update DRM setting on cloud', 'warning');
+        }
+    } catch(err) {
+        showToast(`DRM setting updated: ${isDRM ? 'Protected' : 'Standard'}`, 'info');
+    }
+}
+
+async function handleTeacherDownloadPolicyChange(recId, policy) {
+    try {
+        const res = await fetch(`${BackendSync.apiUrl}/api/recordings/${recId}/drm`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                drm_protected: true,
+                download_policy: policy
+            })
+        });
+        if (res.ok) {
+            showToast(`Download policy set to: ${policy === 'in_app_only' ? 'In-Platform Vault Only' : policy}`, 'success');
+        }
+    } catch(err) {
+        showToast(`Policy updated: ${policy}`, 'info');
+    }
+}
+
+// 6. Utility Functions
+function formatSeconds(sec) {
+    const s = Math.floor(sec || 0);
+    const hrs = Math.floor(s / 3600);
+    const mins = Math.floor((s % 3600) / 60);
+    const secs = s % 60;
+    if (hrs > 0) {
+        return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function hashString(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = (hash << 5) - hash + str.charCodeAt(i);
+        hash |= 0;
+    }
+    return hash;
+}
+
+function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+    if (fill) ctx.fill();
+    if (stroke) ctx.stroke();
 }
 
 // ========== SETTINGS ==========

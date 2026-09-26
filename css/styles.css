@@ -6875,6 +6875,157 @@ select:focus {
     border-color: var(--accent-primary);
 }
 
+/* ========== DRM WATERMARK & ANTI-PIRACY SECURITY ENGINE ========== */
+.drm-canvas-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 6;
+}
+
+.drm-security-shield {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(7, 10, 20, 0.96);
+    backdrop-filter: blur(25px);
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 30px;
+    text-align: center;
+    border-radius: var(--radius-md);
+    transition: opacity 0.3s ease;
+}
+
+.drm-shield-icon {
+    font-size: 3rem;
+    color: #F43F5E;
+    margin-bottom: 16px;
+    animation: pulseShield 2s infinite ease-in-out;
+}
+
+@keyframes pulseShield {
+    0%, 100% { transform: scale(1); filter: drop-shadow(0 0 15px rgba(244, 63, 94, 0.4)); }
+    50% { transform: scale(1.08); filter: drop-shadow(0 0 25px rgba(244, 63, 94, 0.8)); }
+}
+
+.drm-shield-title {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: #FFF;
+    margin-bottom: 8px;
+}
+
+.drm-shield-desc {
+    font-size: 0.88rem;
+    color: var(--text-muted);
+    max-width: 520px;
+    line-height: 1.5;
+    margin-bottom: 18px;
+}
+
+.quality-badge {
+    background: rgba(6, 182, 212, 0.15);
+    border: 1px solid rgba(6, 182, 212, 0.3);
+    color: #06B6D4;
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+.quality-badge:hover {
+    background: rgba(6, 182, 212, 0.3);
+    border-color: #06B6D4;
+}
+
+.player-captions-overlay {
+    position: absolute;
+    bottom: 74px;
+    left: 20px;
+    right: 20px;
+    text-align: center;
+    pointer-events: none;
+    z-index: 8;
+}
+
+.caption-line {
+    display: inline-block;
+    background: rgba(0, 0, 0, 0.82);
+    color: #FFF;
+    font-size: 0.95rem;
+    font-weight: 500;
+    padding: 4px 14px;
+    border-radius: 6px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+    letter-spacing: 0.2px;
+}
+
+.player-chapters-drawer {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-top: 14px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+}
+
+.chapter-item-btn {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid transparent;
+    padding: 8px 12px;
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: left;
+    width: 100%;
+}
+
+.chapter-item-btn:hover, .chapter-item-btn.active {
+    background: rgba(99, 102, 241, 0.12);
+    border-color: rgba(99, 102, 241, 0.35);
+    color: #A5B4FC;
+}
+
+.chapter-time-tag {
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    color: #06B6D4;
+    background: rgba(6, 182, 212, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.in-app-vault-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: rgba(139, 92, 246, 0.15);
+    border: 1px solid rgba(139, 92, 246, 0.35);
+    color: #C084FC;
+}
+
 @media (max-width: 850px) {
     .chat-archive-layout {
         grid-template-columns: 1fr;

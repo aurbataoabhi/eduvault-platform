@@ -267,9 +267,29 @@ def init_db():
         recorded_date TEXT NOT NULL,
         video_url TEXT,
         gradient_style TEXT,
-        progress_pct INTEGER DEFAULT 0
+        progress_pct INTEGER DEFAULT 0,
+        drm_protected INTEGER DEFAULT 1,
+        download_policy TEXT DEFAULT 'in_app_only',
+        resolutions_json TEXT DEFAULT '["1080p", "720p", "480p", "360p"]',
+        chapters_json TEXT
     );
     """)
+
+    # Automated migrations for recordings table
+    for col_sql in [
+        "ALTER TABLE recordings ADD COLUMN drm_protected INTEGER DEFAULT 1;",
+        "ALTER TABLE recordings ADD COLUMN download_policy TEXT DEFAULT 'in_app_only';",
+        "ALTER TABLE recordings ADD COLUMN resolutions_json TEXT DEFAULT '[\"1080p\", \"720p\", \"480p\", \"360p\"]';",
+        "ALTER TABLE recordings ADD COLUMN chapters_json TEXT;"
+    ]:
+        try:
+            cursor.execute(col_sql)
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
     # 6. User Attendance & Outage Audit Log table
     cursor.execute(f"""

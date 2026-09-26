@@ -128,3 +128,17 @@ class EnrollmentKeyClaimRequest(BaseModel):
     student_name: Optional[str] = "Student"
     student_email: Optional[str] = "student@eduvault.io"
 
+class RecordingCreate(BaseModel):
+    title: str
+    instructor: str
+    duration: str = "1:00:00"
+    quality: str = "HD 1080p"
+    video_url: Optional[str] = "/assets/videos/lecture.mp4"
+    session_id: Optional[str] = "dsa-bt-live"
+    drm_protected: bool = True
+    download_policy: str = "in_app_only" # in_app_only | disabled | allowed
+
+class RecordingDRMPolicyUpdate(BaseModel):
+    drm_protected: bool = True
+    download_policy: str = "in_app_only"
+

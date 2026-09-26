@@ -25,7 +25,9 @@ from models import (
     ScheduleCreate,
     ProfileUpdateRequest,
     EnrollmentKeyCreate,
-    EnrollmentKeyClaimRequest
+    EnrollmentKeyClaimRequest,
+    RecordingCreate,
+    RecordingDRMPolicyUpdate
 )
 from ai_service import generate_ai_catchup_summary, answer_student_doubt
 
@@ -798,7 +800,7 @@ async def create_instruction(session_id: str, inst: InstructionCreate):
     await manager.broadcast(session_id, payload)
     return payload["data"]
 
-# --- Recordings ---
+# --- Recordings & DRM Protected Content Vault ---
 @app.get("/api/recordings")
 def get_recordings():
     conn = get_db()
@@ -806,7 +808,94 @@ def get_recordings():
     cursor.execute("SELECT * FROM recordings ORDER BY id ASC")
     rows = cursor.fetchall()
     conn.close()
-    return [dict(row) for row in rows]
+    
+    results = []
+    default_chapters = [
+        {"title": "Lecture Introduction & Overview", "timestamp": "00:00:00", "seconds": 0},
+        {"title": "Core Theoretical Architecture", "timestamp": "00:15:20", "seconds": 920},
+        {"title": "Live Coding & Implementation", "timestamp": "00:33:00", "seconds": 1980},
+        {"title": "Complexity Analysis & Quiz Review", "timestamp": "00:45:10", "seconds": 2710}
+    ]
+    for r in rows:
+        d = dict(r)
+        try:
+            d["resolutions"] = json.loads(d.get("resolutions_json") or '["1080p", "720p", "480p", "360p"]')
+        except Exception:
+            d["resolutions"] = ["1080p", "720p", "480p", "360p"]
+        try:
+            d["chapters"] = json.loads(d.get("chapters_json")) if d.get("chapters_json") else default_chapters
+        except Exception:
+            d["chapters"] = default_chapters
+        d["drm_protected"] = bool(d.get("drm_protected", 1))
+        d["download_policy"] = d.get("download_policy", "in_app_only")
+        results.append(d)
+    return results
+
+@app.get("/api/recordings/{rec_id}")
+def get_recording_detail(rec_id: str, student_email: Optional[str] = Query("student@eduvault.io")):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM recordings WHERE id = ? OR session_id = ?", (rec_id, rec_id))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Lecture recording not found")
+        
+    d = dict(row)
+    default_chapters = [
+        {"title": "Lecture Introduction & Overview", "timestamp": "00:00:00", "seconds": 0},
+        {"title": "Core Theoretical Architecture", "timestamp": "00:15:20", "seconds": 920},
+        {"title": "Live Coding & Implementation", "timestamp": "00:33:00", "seconds": 1980},
+        {"title": "Complexity Analysis & Quiz Review", "timestamp": "00:45:10", "seconds": 2710}
+    ]
+    try:
+        d["resolutions"] = json.loads(d.get("resolutions_json") or '["1080p", "720p", "480p", "360p"]')
+    except Exception:
+        d["resolutions"] = ["1080p", "720p", "480p", "360p"]
+    try:
+        d["chapters"] = json.loads(d.get("chapters_json")) if d.get("chapters_json") else default_chapters
+    except Exception:
+        d["chapters"] = default_chapters
+    d["drm_protected"] = bool(d.get("drm_protected", 1))
+    d["download_policy"] = d.get("download_policy", "in_app_only")
+    
+    # Dynamic DRM security token bound to the current student
+    d["watermark_token"] = {
+        "student_email": student_email,
+        "session_id": d.get("session_id", "session"),
+        "license_id": f"EDV-DRM-{abs(hash(student_email + d['id'])) % 10000000:07d}",
+        "server_time": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    }
+    return d
+
+@app.post("/api/recordings")
+def create_recording(req: RecordingCreate):
+    conn = get_db()
+    cursor = conn.cursor()
+    rec_id = f"rec-{int(datetime.now().timestamp())}"
+    now_str = datetime.now().strftime("%b %d, %Y")
+    resolutions = json.dumps(["1080p", "720p", "480p", "360p"])
+    
+    cursor.execute("""
+        INSERT INTO recordings (id, session_id, title, instructor, duration, quality, recorded_date, video_url, gradient_style, progress_pct, drm_protected, download_policy, resolutions_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'linear-gradient(135deg, #6366F1, #8B5CF6)', 0, ?, ?, ?)
+    """, (rec_id, req.session_id or rec_id, req.title, req.instructor, req.duration, req.quality, now_str, req.video_url, 1 if req.drm_protected else 0, req.download_policy, resolutions))
+    conn.commit()
+    conn.close()
+    return {"status": "created", "id": rec_id, "title": req.title}
+
+@app.patch("/api/recordings/{rec_id}/drm")
+def update_recording_drm(rec_id: str, req: RecordingDRMPolicyUpdate):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE recordings 
+        SET drm_protected = ?, download_policy = ?
+        WHERE id = ? OR session_id = ?
+    """, (1 if req.drm_protected else 0, req.download_policy, rec_id, rec_id))
+    conn.commit()
+    conn.close()
+    return {"status": "updated", "id": rec_id, "drm_protected": req.drm_protected, "download_policy": req.download_policy}
 
 # --- The Core Session Continuity & Catch-Up Endpoint ---
 @app.get("/api/sessions/{session_id}/catchup")
