@@ -7533,5 +7533,181 @@ select:focus {
     100% { transform: scale(0.92); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
 }
 
+/* ========== INTERACTIVE LIVE WHITEBOARD STUDIO ========== */
+.whiteboard-modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(8, 12, 24, 0.85);
+    backdrop-filter: blur(12px);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    animation: fadeIn 0.2s ease;
+}
+
+.whiteboard-modal {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.7), 0 0 30px rgba(99, 102, 241, 0.15);
+    width: 95vw;
+    max-width: 1400px;
+    height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.whiteboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 20px;
+    background: rgba(15, 23, 42, 0.6);
+    border-bottom: 1px solid var(--border);
+}
+
+.whiteboard-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.whiteboard-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.whiteboard-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 18px;
+    background: rgba(10, 15, 30, 0.7);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+
+.wb-tool-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(255, 255, 255, 0.04);
+    padding: 4px 6px;
+    border-radius: var(--radius-md);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.wb-tool-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 0.95rem;
+    transition: all var(--transition-fast);
+}
+
+.wb-tool-btn:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.wb-tool-btn.active {
+    color: #fff;
+    background: var(--accent-primary);
+    box-shadow: 0 0 12px rgba(99, 102, 241, 0.4);
+}
+
+.wb-color-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.wb-color-dot {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.wb-color-dot:hover {
+    transform: scale(1.2);
+}
+
+.wb-color-dot.active {
+    transform: scale(1.2);
+    border-color: #fff;
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+}
+
+.wb-divider {
+    width: 1px;
+    height: 24px;
+    background: var(--border);
+    margin: 0 4px;
+}
+
+.whiteboard-canvas-area {
+    position: relative;
+    flex: 1;
+    overflow: hidden;
+    background: #0f1224;
+}
+
+.whiteboard-canvas-area.grid-dots {
+    background-image: radial-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+    background-size: 24px 24px;
+}
+
+.whiteboard-canvas-area.grid-math {
+    background-image: linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+    background-size: 28px 28px;
+}
+
+#whiteboard-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    cursor: crosshair;
+}
+
+/* Stream Telemetry Widget */
+.stream-telemetry-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: var(--radius-full);
+    font-size: 0.76rem;
+    font-weight: 600;
+    font-family: var(--font-mono);
+}
+.stream-telemetry-badge.live {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10B981;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+}
+.stream-telemetry-badge.ready {
+    background: rgba(6, 182, 212, 0.15);
+    color: #06B6D4;
+    border: 1px solid rgba(6, 182, 212, 0.4);
+}
+
+
 
 

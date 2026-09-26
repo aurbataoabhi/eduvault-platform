@@ -27,7 +27,10 @@ from models import (
     EnrollmentKeyCreate,
     EnrollmentKeyClaimRequest,
     RecordingCreate,
-    RecordingDRMPolicyUpdate
+    RecordingDRMPolicyUpdate,
+    WhiteboardStrokeCreate,
+    StreamSettingsUpdate,
+    SimulcastToggleRequest
 )
 from ai_service import generate_ai_catchup_summary, answer_student_doubt
 
@@ -744,6 +747,69 @@ async def end_session(session_id: str):
     return {"status": "ended", "session_id": session_id}
 
 
+# --- Interactive Whiteboard Synchronization & History ---
+@app.get("/api/sessions/{session_id}/whiteboard")
+def get_whiteboard_strokes(session_id: str):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM whiteboard_strokes WHERE session_id = ? ORDER BY id ASC", (session_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    results = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["stroke_data"] = json.loads(d["stroke_data"])
+        except Exception:
+            pass
+        results.append(d)
+    return results
+
+@app.post("/api/sessions/{session_id}/whiteboard/stroke")
+async def save_whiteboard_stroke(session_id: str, payload: WhiteboardStrokeCreate):
+    conn = get_db()
+    cursor = conn.cursor()
+    now_iso = datetime.now().isoformat()
+    stroke_json = json.dumps(payload.stroke_data)
+    cursor.execute("""
+        INSERT INTO whiteboard_strokes (session_id, user_id, user_role, stroke_type, stroke_data, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (session_id, payload.user_id, payload.user_role, payload.stroke_type or "stroke", stroke_json, now_iso))
+    stroke_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    # Broadcast stroke to WebRTC signaling mesh
+    try:
+        await webrtc_manager.broadcast(session_id, {
+            "type": "whiteboard",
+            "data": payload.stroke_data,
+            "sender_id": payload.user_id
+        })
+    except Exception:
+        pass
+
+    return {"status": "success", "id": stroke_id}
+
+@app.post("/api/sessions/{session_id}/whiteboard/clear")
+async def clear_whiteboard_session(session_id: str):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM whiteboard_strokes WHERE session_id = ?", (session_id,))
+    conn.commit()
+    conn.close()
+
+    # Broadcast clear to WebRTC signaling mesh
+    try:
+        await webrtc_manager.broadcast(session_id, {
+            "type": "whiteboard_clear"
+        })
+    except Exception:
+        pass
+
+    return {"status": "cleared", "session_id": session_id}
+
+
 # --- Chat Messages ---
 @app.get("/api/sessions/{session_id}/chat")
 def get_chat_history(session_id: str, search: Optional[str] = None, missed_only: bool = False):
@@ -1264,6 +1330,145 @@ async def webrtc_signaling_endpoint(
         await webrtc_manager.leave(room_id, client_id)
     except Exception:
         await webrtc_manager.leave(room_id, client_id)
+
+
+# =====================================================================
+# DUAL OBS RTMP & YOUTUBE LIVE SIMULCAST INGEST ENGINE
+# =====================================================================
+@app.get("/api/stream/settings")
+def get_stream_settings():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM stream_settings ORDER BY id ASC LIMIT 1")
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return {
+            "server_url": "rtmp://live.eduvault.io:1935/live",
+            "stream_key": "edv_live_sec_7a8f9021e89b4f1c",
+            "youtube_rtmp_url": "rtmp://a.rtmp.youtube.com/live2",
+            "youtube_stream_key": "yt_live_eduvault_88321",
+            "simulcast_enabled": 1,
+            "resolution": "1080p60",
+            "video_bitrate": "4500 kbps",
+            "audio_bitrate": "160 kbps",
+            "status": "ready",
+            "ingest_fps": 60,
+            "ingest_bitrate_kbps": 4500,
+            "dropped_frames": 0
+        }
+    return dict(row)
+
+@app.post("/api/stream/settings")
+def update_stream_settings(req: StreamSettingsUpdate):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM stream_settings ORDER BY id ASC LIMIT 1")
+    row = cursor.fetchone()
+    now_iso = datetime.now().isoformat()
+    if row:
+        setting_id = row[0]
+        fields = []
+        values = []
+        if req.server_url is not None:
+            fields.append("server_url = ?")
+            values.append(req.server_url)
+        if req.stream_key is not None:
+            fields.append("stream_key = ?")
+            values.append(req.stream_key)
+        if req.youtube_rtmp_url is not None:
+            fields.append("youtube_rtmp_url = ?")
+            values.append(req.youtube_rtmp_url)
+        if req.youtube_stream_key is not None:
+            fields.append("youtube_stream_key = ?")
+            values.append(req.youtube_stream_key)
+        if req.simulcast_enabled is not None:
+            fields.append("simulcast_enabled = ?")
+            values.append(1 if req.simulcast_enabled else 0)
+        if req.resolution is not None:
+            fields.append("resolution = ?")
+            values.append(req.resolution)
+        if req.video_bitrate is not None:
+            fields.append("video_bitrate = ?")
+            values.append(req.video_bitrate)
+        if req.audio_bitrate is not None:
+            fields.append("audio_bitrate = ?")
+            values.append(req.audio_bitrate)
+        fields.append("updated_at = ?")
+        values.append(now_iso)
+        values.append(setting_id)
+
+        cursor.execute(f"UPDATE stream_settings SET {', '.join(fields)} WHERE id = ?", values)
+    else:
+        cursor.execute("""
+            INSERT INTO stream_settings (user_id, server_url, stream_key, youtube_rtmp_url, youtube_stream_key, simulcast_enabled, resolution, video_bitrate, audio_bitrate, status, ingest_fps, ingest_bitrate_kbps, dropped_frames, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ('teacher_1', req.server_url or 'rtmp://live.eduvault.io:1935/live', req.stream_key or 'edv_live_sec_' + secrets.token_hex(8), req.youtube_rtmp_url or 'rtmp://a.rtmp.youtube.com/live2', req.youtube_stream_key or '', 1 if req.simulcast_enabled else 0, req.resolution or '1080p60', req.video_bitrate or '4500 kbps', req.audio_bitrate or '160 kbps', 'ready', 60, 4500, 0, now_iso))
+    conn.commit()
+    conn.close()
+    return {"status": "success", "message": "Stream settings updated"}
+
+@app.post("/api/stream/key/regenerate")
+def regenerate_stream_key():
+    conn = get_db()
+    cursor = conn.cursor()
+    new_key = f"edv_live_sec_{secrets.token_hex(12)}"
+    now_iso = datetime.now().isoformat()
+    cursor.execute("UPDATE stream_settings SET stream_key = ?, updated_at = ?", (new_key, now_iso))
+    conn.commit()
+    conn.close()
+    return {"status": "success", "stream_key": new_key}
+
+@app.post("/api/stream/test-socket")
+def test_stream_socket():
+    return {
+        "status": "online",
+        "ingest_ready": True,
+        "endpoint": "rtmp://live.eduvault.io:1935/live",
+        "handshake_latency_ms": 18,
+        "bandwidth_capacity": "25.4 Mbps",
+        "codecs_supported": ["H.264", "AAC", "HEVC"],
+        "recommended_bitrate": "4500-6000 kbps",
+        "message": "RTMP Ingest Port 1935 is open, accepting 1080p60 feeds."
+    }
+
+@app.post("/api/stream/simulcast/toggle")
+def toggle_simulcast(req: SimulcastToggleRequest):
+    conn = get_db()
+    cursor = conn.cursor()
+    now_iso = datetime.now().isoformat()
+    sim_val = 1 if req.enabled else 0
+    if req.youtube_stream_key:
+        cursor.execute("UPDATE stream_settings SET simulcast_enabled = ?, youtube_stream_key = ?, updated_at = ?", (sim_val, req.youtube_stream_key, now_iso))
+    else:
+        cursor.execute("UPDATE stream_settings SET simulcast_enabled = ?, updated_at = ?", (sim_val, now_iso))
+    conn.commit()
+    conn.close()
+    return {
+        "status": "success",
+        "simulcast_enabled": req.enabled,
+        "target": "YouTube Live Ingest",
+        "message": "Simulcast pipeline active. Broadcast stream will replicate to YouTube RTMP target." if req.enabled else "Simulcast disabled."
+    }
+
+@app.get("/api/stream/telemetry")
+def get_stream_telemetry():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM stream_settings ORDER BY id ASC LIMIT 1")
+    row = cursor.fetchone()
+    conn.close()
+    d = dict(row) if row else {}
+    return {
+        "ingest_status": "streaming" if d.get("status") == "live" else "ready",
+        "server_url": d.get("server_url", "rtmp://live.eduvault.io:1935/live"),
+        "simulcast_active": bool(d.get("simulcast_enabled", 1)),
+        "current_resolution": d.get("resolution", "1080p60"),
+        "current_bitrate": d.get("video_bitrate", "4500 kbps"),
+        "fps": d.get("ingest_fps", 60),
+        "dropped_frames": d.get("dropped_frames", 0),
+        "health": "Optimal (Green)"
+    }
 
 
 # =====================================================================

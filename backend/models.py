@@ -142,3 +142,25 @@ class RecordingDRMPolicyUpdate(BaseModel):
     drm_protected: bool = True
     download_policy: str = "in_app_only"
 
+# Whiteboard & Stream Models
+class WhiteboardStrokeCreate(BaseModel):
+    session_id: str
+    user_id: Optional[str] = "teacher"
+    user_role: Optional[str] = "teacher"
+    stroke_type: Optional[str] = "stroke"
+    stroke_data: Dict[str, Any]
+
+class StreamSettingsUpdate(BaseModel):
+    server_url: Optional[str] = None
+    stream_key: Optional[str] = None
+    youtube_rtmp_url: Optional[str] = None
+    youtube_stream_key: Optional[str] = None
+    simulcast_enabled: Optional[bool] = None
+    resolution: Optional[str] = None
+    video_bitrate: Optional[str] = None
+    audio_bitrate: Optional[str] = None
+
+class SimulcastToggleRequest(BaseModel):
+    enabled: bool
+    youtube_stream_key: Optional[str] = None
+

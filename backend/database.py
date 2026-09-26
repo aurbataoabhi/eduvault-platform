@@ -438,17 +438,61 @@ def init_db():
     );
     """)
 
+    # 15. Whiteboard Strokes table (Interactive Synchronized Whiteboard)
+    cursor.execute(f"""
+    CREATE TABLE IF NOT EXISTS whiteboard_strokes (
+        id {id_primary_key},
+        session_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        user_role TEXT DEFAULT 'teacher',
+        stroke_type TEXT DEFAULT 'stroke',
+        stroke_data TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    """)
+
+    # 16. Stream Settings table (Dual OBS RTMP & YouTube Live Ingest Engine)
+    cursor.execute(f"""
+    CREATE TABLE IF NOT EXISTS stream_settings (
+        id {id_primary_key},
+        user_id TEXT DEFAULT 'teacher_1',
+        server_url TEXT NOT NULL DEFAULT 'rtmp://live.eduvault.io:1935/live',
+        stream_key TEXT NOT NULL,
+        youtube_rtmp_url TEXT DEFAULT 'rtmp://a.rtmp.youtube.com/live2',
+        youtube_stream_key TEXT DEFAULT '',
+        simulcast_enabled INTEGER DEFAULT 0,
+        resolution TEXT DEFAULT '1080p60',
+        video_bitrate TEXT DEFAULT '4500 kbps',
+        audio_bitrate TEXT DEFAULT '160 kbps',
+        status TEXT DEFAULT 'ready',
+        ingest_fps INTEGER DEFAULT 60,
+        ingest_bitrate_kbps INTEGER DEFAULT 4500,
+        dropped_frames INTEGER DEFAULT 0,
+        updated_at TEXT NOT NULL
+    );
+    """)
+
+    conn.commit()
+
     # Automated migration for existing student_enrollments schema
     try:
         cursor.execute("ALTER TABLE student_enrollments ADD COLUMN batch_name TEXT;")
+        conn.commit()
     except Exception:
-        pass
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
     try:
         cursor.execute("ALTER TABLE student_enrollments ADD COLUMN permissions_json TEXT;")
+        conn.commit()
     except Exception:
-        pass
+        try:
+            conn.rollback()
+        except Exception:
+            pass
 
-    conn.commit()
     seed_data(conn)
     conn.close()
 
@@ -598,5 +642,13 @@ def seed_additional_tables(cursor):
         INSERT INTO enrollment_keys (key_code, course_id, batch_name, created_by, max_uses, current_uses, permissions_json, is_active, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, enrollment_keys)
+
+    cursor.execute("SELECT COUNT(*) FROM stream_settings")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("""
+        INSERT INTO stream_settings (user_id, server_url, stream_key, youtube_rtmp_url, youtube_stream_key, simulcast_enabled, resolution, video_bitrate, audio_bitrate, status, ingest_fps, ingest_bitrate_kbps, dropped_frames, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ('teacher_1', 'rtmp://live.eduvault.io:1935/live', 'edv_live_sec_7a8f9021e89b4f1c', 'rtmp://a.rtmp.youtube.com/live2', 'yt_live_eduvault_88321', 1, '1080p60', '4500 kbps', '160 kbps', 'ready', 60, 4500, 0, now_iso))
+
 
 

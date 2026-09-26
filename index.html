@@ -949,8 +949,14 @@
                                 <div class="video-top-bar">
                                     <span class="class-title"><i class="fas fa-lock"></i> Data Structures — Binary Trees (WebRTC Live)</span>
                                     <div class="video-top-actions">
+                                        <button class="btn btn-sm btn-outline" style="font-size: 0.72rem; padding: 4px 8px; background: rgba(0,0,0,0.5);" onclick="openIntegrationModal('obs')" title="OBS Studio RTMP Ingest & Keys">
+                                            <i class="fas fa-satellite-dish text-indigo"></i> OBS Ingest
+                                        </button>
+                                        <button class="btn btn-sm btn-outline" style="font-size: 0.72rem; padding: 4px 8px; background: rgba(0,0,0,0.5);" onclick="openIntegrationModal('youtube')" title="YouTube Live Simulcast Pipeline">
+                                            <i class="fab fa-youtube text-red"></i> Simulcast
+                                        </button>
                                         <button class="btn btn-sm btn-outline" style="font-size: 0.72rem; padding: 4px 8px; background: rgba(0,0,0,0.5);" onclick="simulateClassroomOutage()" title="Test Wi-Fi / Power Outage Resilience">
-                                            <i class="fas fa-plug-circle-exclamation text-yellow"></i> Test Outage Resilience
+                                            <i class="fas fa-plug-circle-exclamation text-yellow"></i> Outage Test
                                         </button>
                                         <span class="webrtc-status-pill" id="webrtc-status-pill">
                                             <i class="fas fa-signal"></i> WebRTC P2P Live
@@ -2984,6 +2990,84 @@ If BF > 1 or BF < -1, rotation needed!</code></pre>
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- ========== INTERACTIVE LIVE WHITEBOARD STUDIO MODAL ========== -->
+    <div class="whiteboard-modal-overlay hidden" id="whiteboard-modal">
+        <div class="whiteboard-modal">
+            <div class="whiteboard-header">
+                <div class="whiteboard-header-left">
+                    <i class="fas fa-chalkboard text-cyan" style="font-size: 1.4rem;"></i>
+                    <div>
+                        <h2 style="font-size: 1.15rem; margin: 0; display: flex; align-items: center; gap: 8px;">
+                            Interactive Live Whiteboard Studio
+                            <span class="webrtc-status-pill connected" id="wb-sync-badge"><i class="fas fa-satellite-dish"></i> WebRTC Sync Active</span>
+                        </h2>
+                        <small style="color: var(--text-muted); font-size: 0.78rem;">Synchronized across all connected students in real-time</small>
+                    </div>
+                </div>
+                <div class="whiteboard-header-actions">
+                    <button class="btn btn-sm btn-outline" onclick="downloadWhiteboard()" title="Save Notes as PNG">
+                        <i class="fas fa-download"></i> Save Notes (PNG)
+                    </button>
+                    <button class="btn btn-sm btn-outline" onclick="clearWhiteboard(true)" title="Clear Whiteboard for All">
+                        <i class="fas fa-trash-alt text-danger"></i> Clear Board
+                    </button>
+                    <button class="modal-close" onclick="closeWhiteboard()"><i class="fas fa-times"></i></button>
+                </div>
+            </div>
+
+            <!-- Sleek Tool Palette -->
+            <div class="whiteboard-toolbar">
+                <div class="wb-tool-group">
+                    <button class="wb-tool-btn active" id="tool-pen" onclick="setWhiteboardTool('pen')" title="Freehand Pen"><i class="fas fa-pen"></i></button>
+                    <button class="wb-tool-btn" id="tool-highlighter" onclick="setWhiteboardTool('highlighter')" title="Neon Highlighter"><i class="fas fa-highlighter"></i></button>
+                    <button class="wb-tool-btn" id="tool-line" onclick="setWhiteboardTool('line')" title="Straight Line"><i class="fas fa-slash"></i></button>
+                    <button class="wb-tool-btn" id="tool-rect" onclick="setWhiteboardTool('rect')" title="Rectangle Box"><i class="far fa-square"></i></button>
+                    <button class="wb-tool-btn" id="tool-circle" onclick="setWhiteboardTool('circle')" title="Circle / Ellipse"><i class="far fa-circle"></i></button>
+                    <button class="wb-tool-btn" id="tool-text" onclick="setWhiteboardTool('text')" title="Text / Formula Note"><i class="fas fa-font"></i></button>
+                    <button class="wb-tool-btn" id="tool-eraser" onclick="setWhiteboardTool('eraser')" title="Eraser"><i class="fas fa-eraser"></i></button>
+                </div>
+
+                <div class="wb-divider"></div>
+
+                <!-- Colors -->
+                <div class="wb-color-group">
+                    <span class="wb-color-dot active" style="background: #FFFFFF;" onclick="setWhiteboardColor('#FFFFFF', this)" title="White"></span>
+                    <span class="wb-color-dot" style="background: #00E5FF;" onclick="setWhiteboardColor('#00E5FF', this)" title="Cyan"></span>
+                    <span class="wb-color-dot" style="background: #10B981;" onclick="setWhiteboardColor('#10B981', this)" title="Emerald"></span>
+                    <span class="wb-color-dot" style="background: #F43F5E;" onclick="setWhiteboardColor('#F43F5E', this)" title="Rose"></span>
+                    <span class="wb-color-dot" style="background: #F59E0B;" onclick="setWhiteboardColor('#F59E0B', this)" title="Amber Yellow"></span>
+                    <span class="wb-color-dot" style="background: #818CF8;" onclick="setWhiteboardColor('#818CF8', this)" title="Indigo"></span>
+                </div>
+
+                <div class="wb-divider"></div>
+
+                <!-- Stroke Size -->
+                <div style="display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--text-muted);">
+                    <span>Size:</span>
+                    <input type="range" id="wb-size-slider" min="1" max="24" value="3" oninput="setWhiteboardSize(this.value)" style="width: 80px;">
+                    <span id="wb-size-val" style="min-width: 20px; font-family: var(--font-mono); color: var(--text-primary);">3px</span>
+                </div>
+
+                <div class="wb-divider"></div>
+
+                <!-- Background Grid Selector -->
+                <div style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--text-muted);">
+                    <span>Grid:</span>
+                    <select id="wb-grid-select" onchange="setWhiteboardGrid(this.value)" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); color: var(--text-primary); border-radius: var(--radius-sm); padding: 4px 8px; font-size: 0.78rem;">
+                        <option value="grid-dots">Dot Matrix</option>
+                        <option value="grid-math">Math Graph</option>
+                        <option value="grid-plain">Plain Blackboard</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Drawing Stage -->
+            <div class="whiteboard-canvas-area grid-dots" id="whiteboard-canvas-area">
+                <canvas id="whiteboard-canvas"></canvas>
+            </div>
         </div>
     </div>
 
